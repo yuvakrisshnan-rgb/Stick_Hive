@@ -1,0 +1,690 @@
+@import "tailwindcss";
+
+
+/* ========================================================================= */
+/* ROOT / BRAND VARIABLES                                                    */
+/* ========================================================================= */
+
+:root {
+
+  --background: #fff8ed;
+  --foreground: #111111;
+
+  --hive-yellow: #ffd43b;
+  --honey-orange: #ff8a00;
+  --honey-dark: #e66f00;
+
+  --cream: #fff8ed;
+  --mint: #b8f2d0;
+
+  --card: #ffffff;
+  --border: #f1dfc5;
+  --muted: #6b6b6b;
+
+  --primary: var(--hive-yellow);
+  --primary-foreground: #111111;
+
+  --secondary: var(--mint);
+  --secondary-foreground: #111111;
+
+  --accent: var(--honey-orange);
+  --accent-foreground: #ffffff;
+
+  --radius: 1rem;
+
+}
+
+
+/* ========================================================================= */
+/* TAILWIND THEME                                                            */
+/* ========================================================================= */
+
+@theme inline {
+
+  --color-background:
+    var(--background);
+
+  --color-foreground:
+    var(--foreground);
+
+
+  --color-hive-yellow:
+    var(--hive-yellow);
+
+  --color-honey-orange:
+    var(--honey-orange);
+
+  --color-honey-dark:
+    var(--honey-dark);
+
+  --color-cream:
+    var(--cream);
+
+  --color-mint:
+    var(--mint);
+
+
+  --color-card:
+    var(--card);
+
+  --color-border:
+    var(--border);
+
+  --color-muted:
+    var(--muted);
+
+
+  --color-primary:
+    var(--primary);
+
+  --color-primary-foreground:
+    var(--primary-foreground);
+
+  --color-secondary:
+    var(--secondary);
+
+  --color-secondary-foreground:
+    var(--secondary-foreground);
+
+  --color-accent:
+    var(--accent);
+
+  --color-accent-foreground:
+    var(--accent-foreground);
+
+}
+
+
+/* ========================================================================= */
+/* GLOBAL RESET                                                              */
+/* ========================================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+
+html {
+  scroll-behavior: smooth;
+}
+
+
+body {
+
+  margin: 0;
+
+  background:
+    var(--background);
+
+  color:
+    var(--foreground);
+
+  font-family:
+    Arial,
+    Helvetica,
+    sans-serif;
+
+}
+
+
+/* ========================================================================= */
+/* DEFAULT ELEMENTS                                                          */
+/* ========================================================================= */
+
+button {
+  cursor: pointer;
+}
+
+
+button:disabled {
+  cursor: default;
+}
+
+
+a {
+  text-decoration: none;
+}
+
+
+/* ========================================================================= */
+/* HEADINGS                                                                  */
+/* ========================================================================= */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+
+  font-weight: 700;
+
+  letter-spacing:
+    -0.03em;
+
+}
+
+
+/* ========================================================================= */
+/* TEXT SELECTION                                                            */
+/* ========================================================================= */
+
+::selection {
+
+  background:
+    var(--hive-yellow);
+
+  color:
+    var(--foreground);
+
+}
+
+
+/* ========================================================================= */
+/* GENERIC MARQUEE                                                           */
+/* ========================================================================= */
+
+@keyframes marquee {
+
+  from {
+    transform:
+      translateX(0);
+  }
+
+  to {
+    transform:
+      translateX(-50%);
+  }
+
+}
+
+
+@keyframes marquee-reverse {
+
+  from {
+    transform:
+      translateX(-50%);
+  }
+
+  to {
+    transform:
+      translateX(0);
+  }
+
+}
+
+
+.animate-marquee {
+
+  animation:
+    marquee
+    25s
+    linear
+    infinite;
+
+}
+
+
+.animate-marquee-reverse {
+
+  animation:
+    marquee-reverse
+    25s
+    linear
+    infinite;
+
+}
+
+
+/* ========================================================================= */
+/* CUSTOM SCROLLBAR                                                          */
+/* ========================================================================= */
+
+.custom-scroll::-webkit-scrollbar {
+
+  width:
+    6px;
+
+}
+
+
+.custom-scroll::-webkit-scrollbar-thumb {
+
+  background:
+    rgba(0, 0, 0, 0.15);
+
+  border-radius:
+    20px;
+
+}
+
+
+.custom-scroll::-webkit-scrollbar-track {
+
+  background:
+    transparent;
+
+}
+
+
+/* ========================================================================= */
+/* GRAYSCALE COLORS                                                          */
+/* ========================================================================= */
+
+:root {
+
+  --color-grayscale-1:
+    #ffffff;
+
+  --color-grayscale-3:
+    #e5e5e5;
+
+  --color-grayscale-4:
+    #d4d4d4;
+
+  --color-grayscale-8:
+    #737373;
+
+  --color-grayscale-11:
+    #262626;
+
+  --color-grayscale-12:
+    #171717;
+
+}
+
+
+/* ========================================================================= */
+/* STICKHIVE — TRENDING STICKERS                                             */
+/* ========================================================================= */
+
+
+/* ========================================================================= */
+/* TRENDING VIEWPORT                                                         */
+/* ========================================================================= */
+
+.trending-viewport {
+
+  position:
+    relative;
+
+  width:
+    100%;
+
+  overflow-x:
+    auto;
+
+  overflow-y:
+    hidden;
+
+  /*
+   * Hide the scrollbar while preserving
+   * horizontal scrolling.
+   */
+
+  scrollbar-width:
+    none;
+
+  -ms-overflow-style:
+    none;
+
+  /*
+   * Touch devices can swipe horizontally.
+   */
+
+  touch-action:
+    pan-x;
+
+  /*
+   * Prevent accidental text selection
+   * while dragging the carousel.
+   */
+
+  user-select:
+    none;
+
+  -webkit-user-select:
+    none;
+
+  /*
+   * Mouse cursor feedback.
+   */
+
+  cursor:
+    grab;
+
+  /*
+   * Smooth native scrolling on mobile.
+   */
+
+  -webkit-overflow-scrolling:
+    touch;
+
+}
+
+
+/* ========================================================================= */
+/* HIDE TRENDING SCROLLBAR                                                   */
+/* ========================================================================= */
+
+.trending-viewport::-webkit-scrollbar {
+
+  display:
+    none;
+
+  width:
+    0;
+
+  height:
+    0;
+
+}
+
+
+/* ========================================================================= */
+/* ACTIVE DRAGGING                                                           */
+/* ========================================================================= */
+
+.trending-viewport.is-dragging {
+
+  cursor:
+    grabbing;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING TRACK                                                            */
+/* ========================================================================= */
+
+.trending-track {
+
+  display:
+    flex;
+
+  width:
+    max-content;
+
+  min-width:
+    max-content;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING GROUP                                                            */
+/* ========================================================================= */
+
+.trending-group {
+
+  display:
+    flex;
+
+  flex-shrink:
+    0;
+
+  gap:
+    1.5rem;
+
+  padding-left:
+    0.75rem;
+
+  padding-right:
+    0.75rem;
+
+  padding-top:
+    2rem;
+
+  padding-bottom:
+    2rem;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING CARD                                                             */
+/* ========================================================================= */
+
+.trending-card {
+
+  position:
+    relative;
+
+  flex-shrink:
+    0;
+
+  /*
+   * IMPORTANT:
+   *
+   * The card itself does NOT receive the
+   * floating transform.
+   *
+   * The inner motion wrapper handles that.
+   *
+   * This allows hover scaling to work
+   * independently.
+   */
+
+  transform:
+    translateY(0)
+    scale(1);
+
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+
+  isolation:
+    isolate;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING CARD HOVER                                                       */
+/* ========================================================================= */
+
+.trending-card:hover {
+
+  /*
+   * Small premium pop.
+   *
+   * Not too large so the carousel remains
+   * easy to interact with.
+   */
+
+  transform:
+    translateY(-8px)
+    scale(1.035);
+
+  box-shadow:
+    0 30px 70px -25px
+    rgba(0, 0, 0, 0.4);
+
+  z-index:
+    40;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING CARD MOTION                                                      */
+/* ========================================================================= */
+
+/*
+ * The subtle vertical movement is applied
+ * to this inner wrapper.
+ *
+ * The card itself remains available for
+ * hover interaction.
+ */
+
+.trending-card-motion {
+
+  will-change:
+    transform;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING BUTTON                                                           */
+/* ========================================================================= */
+
+.trending-card button {
+
+  position:
+    relative;
+
+  z-index:
+    60;
+
+  pointer-events:
+    auto;
+
+  user-select:
+    none;
+
+  -webkit-user-select:
+    none;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING LINKS                                                            */
+/* ========================================================================= */
+
+.trending-card a {
+
+  user-select:
+    none;
+
+  -webkit-user-select:
+    none;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING IMAGES                                                           */
+/* ========================================================================= */
+
+.trending-card img {
+
+  user-select:
+    none;
+
+  -webkit-user-select:
+    none;
+
+  -webkit-user-drag:
+    none;
+
+  pointer-events:
+    none;
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING MOBILE                                                           */
+/* ========================================================================= */
+
+@media (max-width: 900px) {
+
+  .trending-group {
+
+    gap:
+      1rem;
+
+    padding-left:
+      0.75rem;
+
+    padding-right:
+      0.75rem;
+
+  }
+
+
+  .trending-card:hover {
+
+    transform:
+      translateY(-6px)
+      scale(1.02);
+
+  }
+
+}
+
+
+/* ========================================================================= */
+/* TRENDING SMALL MOBILE                                                     */
+/* ========================================================================= */
+
+@media (max-width: 640px) {
+
+  .trending-group {
+
+    gap:
+      0.875rem;
+
+  }
+
+
+  .trending-card {
+
+    width:
+      260px;
+
+  }
+
+}
+
+
+/* ========================================================================= */
+/* ACCESSIBILITY                                                             */
+/* ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+
+  .trending-card {
+
+    transition:
+      none;
+
+  }
+
+
+  .trending-card:hover {
+
+    transform:
+      translateY(-4px)
+      scale(1.01);
+
+  }
+
+
+  .trending-card-motion {
+
+    animation:
+      none;
+
+  }
+
+}
+
+
+/* ========================================================================= */
+/* SKELETON SHIMMER                                                         */
+/* ========================================================================= */
+
+@keyframes skeleton-shimmer {
+
+  100% {
+
+    transform:
+      translateX(100%);
+
+  }
+
+}
