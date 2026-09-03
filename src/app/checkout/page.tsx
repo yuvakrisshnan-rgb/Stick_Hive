@@ -577,6 +577,11 @@ export default function CheckoutPage() {
       // ======================================================================
       // CUSTOM PRODUCTS
       // ======================================================================
+      //
+      // Custom stickers no longer carry a single imageUrl — they carry
+      // multiple layers, flattened into a thumbnailUrl for display
+      // purposes (cart, receipt, order history).
+      // ======================================================================
 
       const customOrderItems:
         StoredOrderItem[] =
@@ -587,11 +592,10 @@ export default function CheckoutPage() {
               "custom",
 
             productName:
-              item.fileName ||
               "Custom Sticker",
 
             imageUrl:
-              item.imageUrl,
+              item.thumbnailUrl,
 
             size:
               item.size,
@@ -767,17 +771,6 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <style jsx>{`
-        @keyframes payment-progress {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(200%);
-          }
-        }
-      `}</style>
-
       {showPaymentProcessing && (
         <div
           className="
@@ -1249,8 +1242,7 @@ export default function CheckoutPage() {
                           font-bold
                         "
                       >
-                        {item.fileName ||
-                          "Custom Sticker"}
+                        Custom Sticker
                       </p>
 
 

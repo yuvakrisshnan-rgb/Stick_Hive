@@ -1,36 +1,9 @@
 import ShopCatalog from "@/components/shop/shop-catalog"
 
-
-export default async function ShopPage({
-
-  searchParams,
-
-}: {
-
-  searchParams: Promise<{
-    search?: string
-  }>
-
-}) {
-
-
-  const params = await searchParams
-
-
+export default function ShopPage() {
   return (
-
     <main>
-
-      <ShopCatalog
-
-        searchQuery={
-          params.search ?? ""
-        }
-
-      />
-
+      <ShopCatalog />
     </main>
-
   )
-
 }

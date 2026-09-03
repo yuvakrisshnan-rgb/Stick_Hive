@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+
+
 
 import {
   AnimatePresence,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { useEffect } from "react";
+
 
 import {
   useShop,
@@ -36,8 +38,6 @@ import type {
 // ============================================================================
 
 export default function CartDrawer() {
-  const router = useRouter();
-
   const {
     isCartOpen,
     closeCart,
@@ -126,16 +126,6 @@ export default function CartDrawer() {
   }, [
     isCartOpen,
   ]);
-
-
-  // ==========================================================================
-  // CHECKOUT
-  // ==========================================================================
-
-  function handleCheckout() {
-    closeCart();
-    router.push("/checkout");
-  }
 
 
   // ==========================================================================
@@ -540,9 +530,9 @@ export default function CartDrawer() {
                   hasFreeShipping={
                     hasFreeShipping
                   }
-                  onCheckout={
-                    handleCheckout
-                  }
+                  onCheckout={() => {
+                    closeCart();
+                  }}
                 />
 
               </>
@@ -574,7 +564,7 @@ function CartItem({
 }) {
 
   const canIncrease =
-    line.quantity <
+    line.quantity 
     MAX_CART_QUANTITY;
 
 
@@ -865,7 +855,7 @@ function CustomCartItem({
 }) {
 
   const canIncrease =
-    line.quantity <
+    line.quantity 
     MAX_CART_QUANTITY;
 
 
@@ -925,7 +915,7 @@ function CustomCartItem({
         "
       >
 
-        {/* IMAGE */}
+        {/* IMAGE — flattened thumbnail generated from the canvas */}
 
         <div
           className={`
@@ -951,16 +941,12 @@ function CustomCartItem({
         >
 
           <img
-            src={line.imageUrl}
+            src={line.thumbnailUrl}
             alt="Custom sticker"
-            style={{
-              transform:
-                `scale(${line.imageScale ?? 1})`,
-            }}
             className="
               h-full
               w-full
-              object-cover
+              object-contain
             "
           />
 
@@ -1383,7 +1369,7 @@ function CartFooter({
               className="
                 font-semibold
                 text-black/50
-              "
+            "
             >
               You save
             </span>
@@ -1498,8 +1484,8 @@ function CartFooter({
           CHECKOUT
       ================================================================ */}
 
-      <button
-        type="button"
+      <Link
+        href="/checkout"
         onClick={onCheckout}
         className="
           mt-4
@@ -1525,7 +1511,7 @@ function CartFooter({
         />
 
         Checkout
-      </button>
+      </Link>
 
 
       {/* ================================================================

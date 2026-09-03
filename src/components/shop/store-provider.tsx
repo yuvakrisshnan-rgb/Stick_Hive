@@ -17,88 +17,60 @@ import {
   type StickerSize,
 } from "@/lib/product-data";
 
+import {
+  FREE_SHIPPING_THRESHOLD,
+  SHIPPING_FEE,
+  getAmountToFreeShipping,
+  getCartDiscount,
+  getCartItemCount,
+  getCartSubtotal,
+  getCartTotal,
+  getHasFreeShipping,
+  getShippingCost,
+} from "@/lib/cart/calculations";
+
+import {
+  clearStoredCart,
+  clearStoredCustomCart,
+  loadCart,
+  loadCustomCart,
+  loadWishlist,
+  saveCart,
+  saveCustomCart,
+  saveWishlist,
+} from "@/lib/cart/storage";
+
+import type {
+  CartLine,
+  CartLineDetailed,
+  CustomStickerCartLine,
+  CustomStickerFinish,
+  CustomStickerShape,
+} from "@/lib/cart/types";
+
 
 // ============================================================================
-// STORAGE KEYS
-// ============================================================================
-
-const CART_KEY = "stickhive:cart";
-const CUSTOM_CART_KEY = "stickhive:custom-cart";
-const WISHLIST_KEY = "stickhive:wishlist";
-
-
-// ============================================================================
-// CART CONFIGURATION
+// CONSTANTS
 // ============================================================================
 
 export const MAX_CART_QUANTITY = 10;
 
-export const FREE_SHIPPING_THRESHOLD = 200;
-
-export const SHIPPING_FEE = 40;
-
-
-// ============================================================================
-// NORMAL CART TYPES
-// ============================================================================
-
-export type CartLine = {
-  productId: string;
-  size: StickerSize;
-  quantity: number;
-};
-
-
-export type CartLineDetailed = CartLine & {
-  product: Product;
-  unitPrice: number;
-  originalUnitPrice?: number;
-  lineTotal: number;
-  lineDiscount: number;
+export {
+  FREE_SHIPPING_THRESHOLD,
+  SHIPPING_FEE,
 };
 
 
 // ============================================================================
-// CUSTOM STICKER TYPES
+// PRODUCT LOOKUP
 // ============================================================================
 
-export type CustomStickerShape =
-  | "Circle"
-  | "Square"
-  | "Rounded"
-  | "Die-cut";
-
-
-export type CustomStickerFinish =
-  | "Glossy"
-  | "Matte"
-  | "Holographic"
-  | "Transparent";
-
-
-export type CustomStickerCartLine = {
-  type: "custom";
-
-  id: string;
-
-  imageUrl: string;
-
-  fileName: string;
-
-  size: StickerSize;
-
-  shape: CustomStickerShape;
-
-  finish: CustomStickerFinish;
-
-  quantity: number;
-
-  unitPrice: number;
-
-  imageScale: number;
-
-  lineTotal: number;
-};
+const productById = new Map<string, Product>(
+  PRODUCTS.map((product) => [
+    product.id,
+    product,
+  ]),
+);
 
 
 // ============================================================================
@@ -106,27 +78,16 @@ export type CustomStickerCartLine = {
 // ============================================================================
 
 type ShopContextValue = {
-
-  // --------------------------------------------------------------------------
   // Normal cart
-  // --------------------------------------------------------------------------
-
   cart: CartLine[];
-
   cartCount: number;
-
   cartLines: CartLineDetailed[];
 
   cartSubtotal: number;
-
   cartDiscount: number;
-
   shippingCost: number;
-
   cartTotal: number;
-
   amountToFreeShipping: number;
-
   hasFreeShipping: boolean;
 
   addToCart: (
@@ -148,13 +109,8 @@ type ShopContextValue = {
 
   clearCart: () => void;
 
-
-  // --------------------------------------------------------------------------
   // Custom cart
-  // --------------------------------------------------------------------------
-
   customCartLines: CustomStickerCartLine[];
-
   customCartCount: number;
 
   addCustomStickerToCart: (
@@ -180,31 +136,16 @@ type ShopContextValue = {
 
   clearCustomCart: () => void;
 
-
-  // --------------------------------------------------------------------------
   // Combined cart
-  // --------------------------------------------------------------------------
-
   clearAllCart: () => void;
 
-
-  // --------------------------------------------------------------------------
   // Cart drawer
-  // --------------------------------------------------------------------------
-
   isCartOpen: boolean;
-
   openCart: () => void;
-
   closeCart: () => void;
 
-
-  // --------------------------------------------------------------------------
   // Wishlist
-  // --------------------------------------------------------------------------
-
   wishlist: string[];
-
   wishlistCount: number;
 
   isWishlisted: (
@@ -226,25 +167,12 @@ const ShopContext =
 
 
 // ============================================================================
-// PRODUCT LOOKUP
-// ============================================================================
-
-const productById =
-  new Map<string, Product>(
-    PRODUCTS.map((product) => [
-      product.id,
-      product,
-    ]),
-  );
-
-
-// ============================================================================
-// QUANTITY HELPER
+// HELPERS
 // ============================================================================
 
 function clampQuantity(
   quantity: number,
-) {
+): number {
   if (!Number.isFinite(quantity)) {
     return 1;
   }
@@ -259,347 +187,190 @@ function clampQuantity(
 }
 
 
-// ============================================================================
-// PRODUCT VALIDATION
-// ============================================================================
-
 function isValidProduct(
   productId: unknown,
 ): productId is string {
-
-  if (
-    typeof productId !==
-    "string"
-  ) {
-    return false;
-  }
-
-  return productById.has(
-    productId,
+  return (
+    typeof productId === "string" &&
+    productById.has(productId)
   );
 }
 
 
-// ============================================================================
-// CART LINE VALIDATION
-// ============================================================================
-
-function isValidCartLine(
-  line: unknown,
-): line is CartLine {
-
-  if (
-    !line ||
-    typeof line !== "object"
-  ) {
-    return false;
-  }
-
-
-  const item =
-    line as Partial<CartLine>;
-
-
-  if (
-    !isValidProduct(
-      item.productId,
-    )
-  ) {
-    return false;
-  }
-
-
-  const product =
-    productById.get(
-      item.productId,
-    );
-
-
-  if (!product) {
-    return false;
-  }
-
-
-  if (
-    !item.size ||
-    !product.sizes.includes(
-      item.size as StickerSize,
-    )
-  ) {
-    return false;
-  }
-
-
-  if (
-    typeof item.quantity !==
-    "number"
-  ) {
-    return false;
-  }
-
-
-  if (
-    !Number.isFinite(
-      item.quantity,
-    )
-  ) {
-    return false;
-  }
-
-
-  return true;
-}
-
-
-// ============================================================================
-// SANITIZE CART
-// ============================================================================
-
 function sanitizeCart(
   value: unknown,
 ): CartLine[] {
-
   if (!Array.isArray(value)) {
     return [];
   }
 
+  const cleaned: CartLine[] = [];
 
-  const cleanedLines: CartLine[] = [];
+  for (const item of value) {
+    if (
+      !item ||
+      typeof item !== "object"
+    ) {
+      continue;
+    }
 
-
-  for (const rawLine of value) {
+    const line = item as Partial<CartLine>;
 
     if (
-      !isValidCartLine(
-        rawLine,
+      !isValidProduct(line.productId)
+    ) {
+      continue;
+    }
+
+    const product =
+      productById.get(line.productId);
+
+    if (!product || !product.inStock) {
+      continue;
+    }
+
+    if (
+      !line.size ||
+      !product.sizes.includes(
+        line.size as StickerSize,
       )
     ) {
       continue;
     }
 
-
-    const product =
-      productById.get(
-        rawLine.productId,
-      );
-
-
-    if (!product) {
+    if (
+      typeof line.quantity !== "number" ||
+      !Number.isFinite(line.quantity)
+    ) {
       continue;
     }
-
-
-    // --------------------------------------------------------------
-    // Remove products that are no longer available
-    // --------------------------------------------------------------
-
-    if (!product.inStock) {
-      continue;
-    }
-
 
     const quantity =
-      clampQuantity(
-        rawLine.quantity,
-      );
-
+      clampQuantity(line.quantity);
 
     const existingIndex =
-      cleanedLines.findIndex(
-        (line) =>
-          line.productId ===
-            rawLine.productId &&
-          line.size ===
-            rawLine.size,
+      cleaned.findIndex(
+        (existing) =>
+          existing.productId ===
+            line.productId &&
+          existing.size ===
+            line.size,
       );
 
-
-    // --------------------------------------------------------------
-    // Merge duplicate lines
-    // --------------------------------------------------------------
-
-    if (
-      existingIndex !==
-      -1
-    ) {
-
-      const existing =
-        cleanedLines[
-          existingIndex
-        ];
-
-
-      existing.quantity =
+    if (existingIndex >= 0) {
+      cleaned[existingIndex].quantity =
         clampQuantity(
-          existing.quantity +
+          cleaned[existingIndex].quantity +
             quantity,
         );
+    } else {
+      cleaned.push({
+        productId:
+          line.productId,
 
+        size:
+          line.size as StickerSize,
 
-      continue;
+        quantity,
+      });
     }
-
-
-    cleanedLines.push({
-      productId:
-        rawLine.productId,
-
-      size:
-        rawLine.size,
-
-      quantity,
-    });
-
   }
 
-
-  return cleanedLines;
-}
-
-
-// ============================================================================
-// CUSTOM CART VALIDATION
-// ============================================================================
-
-function isValidCustomCartLine(
-  value: unknown,
-): value is CustomStickerCartLine {
-
-  if (
-    !value ||
-    typeof value !== "object"
-  ) {
-    return false;
-  }
-
-
-  const item =
-    value as Partial<CustomStickerCartLine>;
-
-
-  return (
-    typeof item.id ===
-      "string" &&
-    typeof item.imageUrl ===
-      "string" &&
-    typeof item.fileName ===
-      "string" &&
-    typeof item.size ===
-      "string" &&
-    typeof item.shape ===
-      "string" &&
-    typeof item.finish ===
-      "string" &&
-    typeof item.quantity ===
-      "number" &&
-    Number.isFinite(
-      item.quantity,
-    ) &&
-    typeof item.unitPrice ===
-      "number" &&
-    Number.isFinite(
-      item.unitPrice,
-    )
-  );
+  return cleaned;
 }
 
 
 // ============================================================================
 // SANITIZE CUSTOM CART
 // ============================================================================
+// Validates against the layer-based sticker model. A valid entry needs a
+// real `layers` array and a `thumbnailUrl` (the flattened preview used by
+// the cart drawer, checkout receipt, and order history).
 
 function sanitizeCustomCart(
   value: unknown,
 ): CustomStickerCartLine[] {
-
   if (!Array.isArray(value)) {
     return [];
   }
 
-
   return value
     .filter(
-      isValidCustomCartLine,
-    )
-    .map(
-      (
-        line,
-      ) => {
+      (item): item is CustomStickerCartLine => {
+        if (
+          !item ||
+          typeof item !== "object"
+        ) {
+          return false;
+        }
 
-        const quantity =
-          clampQuantity(
-            line.quantity,
-          );
+        const line =
+          item as Partial<CustomStickerCartLine>;
 
-
-        const unitPrice =
-          Math.max(
-            0,
-            line.unitPrice,
-          );
-
-
-        return {
-          ...line,
-
-          type:
-            "custom" as const,
-
-          quantity,
-
-          unitPrice,
-
-          imageScale:
-            Number.isFinite(
-              line.imageScale,
-            )
-              ? Math.max(
-                  0.1,
-                  line.imageScale,
-                )
-              : 1,
-
-          lineTotal:
-            unitPrice *
-            quantity,
-        };
-
+        return (
+          typeof line.id === "string" &&
+          Array.isArray(line.layers) &&
+          typeof line.size === "string" &&
+          typeof line.shape === "string" &&
+          typeof line.finish === "string" &&
+          typeof line.quantity === "number" &&
+          Number.isFinite(line.quantity) &&
+          typeof line.unitPrice === "number" &&
+          Number.isFinite(line.unitPrice) &&
+          typeof line.thumbnailUrl === "string"
+        );
       },
-    );
+    )
+    .map((line) => {
+      const quantity =
+        clampQuantity(line.quantity);
+
+      const unitPrice =
+        Math.max(0, line.unitPrice);
+
+      return {
+        ...line,
+        type: "custom" as const,
+        quantity,
+        unitPrice,
+        lineTotal:
+          unitPrice * quantity,
+      };
+    });
 }
 
-
-// ============================================================================
-// SANITIZE WISHLIST
-// ============================================================================
 
 function sanitizeWishlist(
   value: unknown,
 ): string[] {
-
   if (!Array.isArray(value)) {
     return [];
   }
 
-
-  const validIds =
-    value.filter(
-      (id) =>
-        isValidProduct(id),
-    );
-
-
-  // Remove duplicate product IDs
   return [
     ...new Set(
-      validIds,
+      value.filter(isValidProduct),
     ),
   ];
 }
 
 
+function createCustomStickerId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+}
+
+
 // ============================================================================
-// SHOP PROVIDER
+// PROVIDER
 // ============================================================================
 
 export function ShopProvider({
@@ -607,376 +378,92 @@ export function ShopProvider({
 }: {
   children: ReactNode;
 }) {
+  // --------------------------------------------------------------------------
+  // STATE
+  // --------------------------------------------------------------------------
 
-  // ==========================================================================
-  // NORMAL CART
-  // ==========================================================================
+  const [cart, setCart] =
+    useState<CartLine[]>([]);
 
-  const [
-    cart,
-    setCart,
-  ] = useState<CartLine[]>([]);
+  const [customCartLines, setCustomCartLines] =
+    useState<CustomStickerCartLine[]>([]);
 
+  const [wishlist, setWishlist] =
+    useState<string[]>([]);
 
-  // ==========================================================================
-  // CUSTOM CART
-  // ==========================================================================
+  const [isCartOpen, setIsCartOpen] =
+    useState(false);
 
-  const [
-    customCartLines,
-    setCustomCartLines,
-  ] = useState<
-    CustomStickerCartLine[]
-  >([]);
+  const [hydrated, setHydrated] =
+    useState(false);
 
 
-  // ==========================================================================
-  // WISHLIST
-  // ==========================================================================
-
-  const [
-    wishlist,
-    setWishlist,
-  ] = useState<string[]>([]);
-
-
-  // ==========================================================================
-  // CART DRAWER
-  // ==========================================================================
-
-  const [
-    isCartOpen,
-    setIsCartOpen,
-  ] = useState(false);
-
-
-  // ==========================================================================
-  // HYDRATION
-  // ==========================================================================
-
-  const [
-    hydrated,
-    setHydrated,
-  ] = useState(false);
-
-
-  // ==========================================================================
-  // LOAD SAVED DATA
-  // ==========================================================================
+  // --------------------------------------------------------------------------
+  // INITIAL LOAD
+  // --------------------------------------------------------------------------
 
   useEffect(() => {
+    const savedCart =
+      sanitizeCart(loadCart());
 
-    // ------------------------------------------------------------------------
-    // NORMAL CART
-    // ------------------------------------------------------------------------
-
-    try {
-
-      const savedCart =
-        localStorage.getItem(
-          CART_KEY,
-        );
-
-
-      if (savedCart) {
-
-        const parsedCart =
-          JSON.parse(
-            savedCart,
-          );
-
-
-        const cleanCart =
-          sanitizeCart(
-            parsedCart,
-          );
-
-
-        setCart(
-          cleanCart,
-        );
-
-
-        // Save the cleaned version immediately.
-        // This removes stale/invalid data permanently.
-
-        localStorage.setItem(
-          CART_KEY,
-          JSON.stringify(
-            cleanCart,
-          ),
-        );
-
-      }
-
-    } catch (error) {
-
-      console.warn(
-        "Unable to load StickHive cart.",
-        error,
+    const savedCustomCart =
+      sanitizeCustomCart(
+        loadCustomCart(),
       );
 
-
-      setCart([]);
-
-
-      try {
-
-        localStorage.removeItem(
-          CART_KEY,
-        );
-
-      } catch {
-        // Ignore storage errors.
-      }
-
-    }
-
-
-    // ------------------------------------------------------------------------
-    // CUSTOM CART
-    // ------------------------------------------------------------------------
-
-    try {
-
-      const savedCustomCart =
-        localStorage.getItem(
-          CUSTOM_CART_KEY,
-        );
-
-
-      if (savedCustomCart) {
-
-        const parsedCustomCart =
-          JSON.parse(
-            savedCustomCart,
-          );
-
-
-        const cleanCustomCart =
-          sanitizeCustomCart(
-            parsedCustomCart,
-          );
-
-
-        setCustomCartLines(
-          cleanCustomCart,
-        );
-
-
-        localStorage.setItem(
-          CUSTOM_CART_KEY,
-          JSON.stringify(
-            cleanCustomCart,
-          ),
-        );
-
-      }
-
-    } catch (error) {
-
-      console.warn(
-        "Unable to load StickHive custom sticker cart.",
-        error,
+    const savedWishlist =
+      sanitizeWishlist(
+        loadWishlist(),
       );
 
+    setCart(savedCart);
+    setCustomCartLines(savedCustomCart);
+    setWishlist(savedWishlist);
 
-      setCustomCartLines([]);
-
-
-      try {
-
-        localStorage.removeItem(
-          CUSTOM_CART_KEY,
-        );
-
-      } catch {
-        // Ignore storage errors.
-      }
-
-    }
-
-
-    // ------------------------------------------------------------------------
-    // WISHLIST
-    // ------------------------------------------------------------------------
-
-    try {
-
-      const savedWishlist =
-        localStorage.getItem(
-          WISHLIST_KEY,
-        );
-
-
-      if (savedWishlist) {
-
-        const parsedWishlist =
-          JSON.parse(
-            savedWishlist,
-          );
-
-
-        const cleanWishlist =
-          sanitizeWishlist(
-            parsedWishlist,
-          );
-
-
-        setWishlist(
-          cleanWishlist,
-        );
-
-
-        localStorage.setItem(
-          WISHLIST_KEY,
-          JSON.stringify(
-            cleanWishlist,
-          ),
-        );
-
-      }
-
-    } catch (error) {
-
-      console.warn(
-        "Unable to load StickHive wishlist.",
-        error,
-      );
-
-
-      setWishlist([]);
-
-
-      try {
-
-        localStorage.removeItem(
-          WISHLIST_KEY,
-        );
-
-      } catch {
-        // Ignore storage errors.
-      }
-
-    }
-
-
-    // ------------------------------------------------------------------------
-    // COMPLETE HYDRATION
-    // ------------------------------------------------------------------------
+    saveCart(savedCart);
+    saveCustomCart(savedCustomCart);
+    saveWishlist(savedWishlist);
 
     setHydrated(true);
-
   }, []);
 
 
-  // ==========================================================================
-  // PERSIST NORMAL CART
-  // ==========================================================================
+  // --------------------------------------------------------------------------
+  // PERSISTENCE
+  // --------------------------------------------------------------------------
 
   useEffect(() => {
-
     if (!hydrated) {
       return;
     }
 
+    saveCart(cart);
+  }, [cart, hydrated]);
 
-    try {
-
-      localStorage.setItem(
-        CART_KEY,
-        JSON.stringify(
-          cart,
-        ),
-      );
-
-    } catch (error) {
-
-      console.warn(
-        "Unable to save StickHive cart.",
-        error,
-      );
-
-    }
-
-  }, [
-    cart,
-    hydrated,
-  ]);
-
-
-  // ==========================================================================
-  // PERSIST CUSTOM CART
-  // ==========================================================================
 
   useEffect(() => {
-
     if (!hydrated) {
       return;
     }
 
-
-    try {
-
-      localStorage.setItem(
-        CUSTOM_CART_KEY,
-        JSON.stringify(
-          customCartLines,
-        ),
-      );
-
-    } catch (error) {
-
-      console.warn(
-        "Unable to save StickHive custom sticker cart.",
-        error,
-      );
-
-    }
-
+    saveCustomCart(customCartLines);
   }, [
     customCartLines,
     hydrated,
   ]);
 
 
-  // ==========================================================================
-  // PERSIST WISHLIST
-  // ==========================================================================
-
   useEffect(() => {
-
     if (!hydrated) {
       return;
     }
 
-
-    try {
-
-      localStorage.setItem(
-        WISHLIST_KEY,
-        JSON.stringify(
-          wishlist,
-        ),
-      );
-
-    } catch (error) {
-
-      console.warn(
-        "Unable to save StickHive wishlist.",
-        error,
-      );
-
-    }
-
-  }, [
-    wishlist,
-    hydrated,
-  ]);
+    saveWishlist(wishlist);
+  }, [wishlist, hydrated]);
 
 
   // ==========================================================================
-  // ADD TO CART
+  // NORMAL CART
   // ==========================================================================
 
   const addToCart =
@@ -986,19 +473,10 @@ export function ShopProvider({
         size: StickerSize,
         quantity = 1,
       ) => {
-
         const product =
-          productById.get(
-            productId,
-          );
-
-
-        // ------------------------------------------------------------
-        // Product doesn't exist
-        // ------------------------------------------------------------
+          productById.get(productId);
 
         if (!product) {
-
           console.warn(
             `Product "${productId}" was not found.`,
           );
@@ -1006,13 +484,7 @@ export function ShopProvider({
           return;
         }
 
-
-        // ------------------------------------------------------------
-        // Product unavailable
-        // ------------------------------------------------------------
-
         if (!product.inStock) {
-
           console.warn(
             `"${product.name}" is currently out of stock.`,
           );
@@ -1020,17 +492,9 @@ export function ShopProvider({
           return;
         }
 
-
-        // ------------------------------------------------------------
-        // Size unavailable
-        // ------------------------------------------------------------
-
         if (
-          !product.sizes.includes(
-            size,
-          )
+          !product.sizes.includes(size)
         ) {
-
           console.warn(
             `Size "${size}" is not available for "${product.name}".`,
           );
@@ -1038,90 +502,55 @@ export function ShopProvider({
           return;
         }
 
-
         const safeQuantity =
-          clampQuantity(
-            quantity,
-          );
+          clampQuantity(quantity);
 
-
-        setCart(
-          (currentCart) => {
-
-            const existingIndex =
-              currentCart.findIndex(
-                (line) =>
-                  line.productId ===
-                    productId &&
-                  line.size ===
-                    size,
-              );
-
-
-            // ----------------------------------------------------------
-            // New line
-            // ----------------------------------------------------------
-
-            if (
-              existingIndex ===
-              -1
-            ) {
-
-              return [
-                ...currentCart,
-                {
-                  productId,
-                  size,
-                  quantity:
-                    safeQuantity,
-                },
-              ];
-
-            }
-
-
-            // ----------------------------------------------------------
-            // Existing line
-            // ----------------------------------------------------------
-
-            return currentCart.map(
-              (
-                line,
-                index,
-              ) => {
-
-                if (
-                  index !==
-                  existingIndex
-                ) {
-                  return line;
-                }
-
-
-                return {
-                  ...line,
-
-                  quantity:
-                    clampQuantity(
-                      line.quantity +
-                        safeQuantity,
-                    ),
-                };
-
-              },
+        setCart((current) => {
+          const existing =
+            current.find(
+              (line) =>
+                line.productId ===
+                  productId &&
+                line.size === size,
             );
 
-          },
-        );
+          if (!existing) {
+            return [
+              ...current,
+              {
+                productId,
+                size,
+                quantity:
+                  safeQuantity,
+              },
+            ];
+          }
 
+          return current.map(
+            (line) => {
+              if (
+                line.productId !==
+                  productId ||
+                line.size !== size
+              ) {
+                return line;
+              }
+
+              return {
+                ...line,
+                quantity:
+                  clampQuantity(
+                    line.quantity +
+                      safeQuantity,
+                  ),
+              };
+            },
+          );
+        });
       },
       [],
     );
 
-
-  // ==========================================================================
-  // UPDATE NORMAL CART QUANTITY
-  // ==========================================================================
 
   const updateQuantity =
     useCallback(
@@ -1130,89 +559,53 @@ export function ShopProvider({
         size: StickerSize,
         quantity: number,
       ) => {
-
         if (
-          !Number.isFinite(
-            quantity,
-          )
+          !Number.isFinite(quantity)
         ) {
           return;
         }
-
 
         const safeQuantity =
-          Math.floor(
-            quantity,
+          Math.floor(quantity);
+
+        if (safeQuantity <= 0) {
+          setCart((current) =>
+            current.filter(
+              (line) =>
+                !(
+                  line.productId ===
+                    productId &&
+                  line.size === size
+                ),
+            ),
           );
-
-
-        // ------------------------------------------------------------
-        // Zero = remove
-        // ------------------------------------------------------------
-
-        if (
-          safeQuantity <=
-          0
-        ) {
-
-          setCart(
-            (currentCart) =>
-              currentCart.filter(
-                (line) =>
-                  !(
-                    line.productId ===
-                      productId &&
-                    line.size ===
-                      size
-                  ),
-              ),
-          );
-
 
           return;
         }
 
+        setCart((current) =>
+          current.map((line) => {
+            if (
+              line.productId !==
+                productId ||
+              line.size !== size
+            ) {
+              return line;
+            }
 
-        // ------------------------------------------------------------
-        // Update quantity
-        // ------------------------------------------------------------
-
-        setCart(
-          (currentCart) =>
-            currentCart.map(
-              (line) => {
-
-                if (
-                  line.productId !==
-                    productId ||
-                  line.size !==
-                    size
-                ) {
-                  return line;
-                }
-
-
-                return {
-                  ...line,
-
-                  quantity:
-                    clampQuantity(
-                      safeQuantity,
-                    ),
-                };
-
-              },
-            ),
+            return {
+              ...line,
+              quantity:
+                clampQuantity(
+                  safeQuantity,
+                ),
+            };
+          }),
         );
-
       },
       [],
     );
 
-
-  // ==========================================================================
-  // REMOVE FROM CART
-  // ==========================================================================
 
   const removeFromCart =
     useCallback(
@@ -1220,60 +613,30 @@ export function ShopProvider({
         productId: string,
         size: StickerSize,
       ) => {
-
-        setCart(
-          (currentCart) =>
-            currentCart.filter(
-              (line) =>
-                !(
-                  line.productId ===
-                    productId &&
-                  line.size ===
-                    size
-                ),
-            ),
+        setCart((current) =>
+          current.filter(
+            (line) =>
+              !(
+                line.productId ===
+                  productId &&
+                line.size === size
+              ),
+          ),
         );
-
       },
       [],
     );
 
-
-  // ==========================================================================
-  // CLEAR NORMAL CART
-  // ==========================================================================
 
   const clearCart =
-    useCallback(
-      () => {
-
-        setCart([]);
-
-
-        if (
-          typeof window !==
-          "undefined"
-        ) {
-
-          try {
-
-            localStorage.removeItem(
-              CART_KEY,
-            );
-
-          } catch {
-            // Ignore storage errors.
-          }
-
-        }
-
-      },
-      [],
-    );
+    useCallback(() => {
+      setCart([]);
+      clearStoredCart();
+    }, []);
 
 
   // ==========================================================================
-  // ADD CUSTOM STICKER
+  // CUSTOM STICKER CART
   // ==========================================================================
 
   const addCustomStickerToCart =
@@ -1281,17 +644,13 @@ export function ShopProvider({
       (
         sticker: Omit<
           CustomStickerCartLine,
-          "id" |
-          "type" |
-          "lineTotal"
+          "id" | "type" | "lineTotal"
         >,
       ) => {
-
         const quantity =
           clampQuantity(
             sticker.quantity,
           );
-
 
         const unitPrice =
           Math.max(
@@ -1299,83 +658,48 @@ export function ShopProvider({
             sticker.unitPrice,
           );
 
+        const newSticker: CustomStickerCartLine = {
+          ...sticker,
 
-        const customSticker:
-          CustomStickerCartLine =
-          {
-            ...sticker,
+          id:
+            createCustomStickerId(),
 
-            id:
-              typeof crypto !==
-                "undefined" &&
-              typeof crypto.randomUUID ===
-                "function"
-                ? crypto.randomUUID()
-                : `${Date.now()}-${Math.random()
-                    .toString(36)
-                    .slice(2)}`,
+          type:
+            "custom",
 
-            type:
-              "custom",
+          quantity,
 
-            quantity,
+          unitPrice,
 
-            unitPrice,
-
-            imageScale:
-              Number.isFinite(
-                sticker.imageScale,
-              )
-                ? Math.max(
-                    0.1,
-                    sticker.imageScale,
-                  )
-                : 1,
-
-            lineTotal:
-              unitPrice *
-              quantity,
-          };
-
+          lineTotal:
+            unitPrice * quantity,
+        };
 
         setCustomCartLines(
-          (currentLines) => [
-            ...currentLines,
-            customSticker,
+          (current) => [
+            ...current,
+            newSticker,
           ],
         );
-
       },
       [],
     );
 
 
-  // ==========================================================================
-  // REMOVE CUSTOM STICKER
-  // ==========================================================================
-
   const removeCustomStickerFromCart =
     useCallback(
-      (
-        id: string,
-      ) => {
-
+      (id: string) => {
         setCustomCartLines(
-          (currentLines) =>
-            currentLines.filter(
+          (current) =>
+            current.filter(
               (line) =>
                 line.id !== id,
             ),
         );
-
       },
       [],
     );
 
-
-  // ==========================================================================
-  // UPDATE CUSTOM STICKER QUANTITY
-  // ==========================================================================
 
   const updateCustomStickerQuantity =
     useCallback(
@@ -1383,81 +707,57 @@ export function ShopProvider({
         id: string,
         quantity: number,
       ) => {
-
         if (
-          !Number.isFinite(
-            quantity,
-          )
+          !Number.isFinite(quantity)
         ) {
           return;
         }
 
-
         const safeQuantity =
-          Math.floor(
-            quantity,
-          );
+          Math.floor(quantity);
 
-
-        if (
-          safeQuantity <=
-          0
-        ) {
-
+        if (safeQuantity <= 0) {
           setCustomCartLines(
-            (currentLines) =>
-              currentLines.filter(
+            (current) =>
+              current.filter(
                 (line) =>
                   line.id !== id,
               ),
           );
 
-
           return;
         }
 
-
         setCustomCartLines(
-          (currentLines) =>
-            currentLines.map(
-              (line) => {
+          (current) =>
+            current.map((line) => {
+              if (
+                line.id !== id
+              ) {
+                return line;
+              }
 
-                if (
-                  line.id !== id
-                ) {
-                  return line;
-                }
+              const finalQuantity =
+                clampQuantity(
+                  safeQuantity,
+                );
 
+              return {
+                ...line,
 
-                const finalQuantity =
-                  clampQuantity(
-                    safeQuantity,
-                  );
+                quantity:
+                  finalQuantity,
 
-
-                return {
-                  ...line,
-
-                  quantity:
-                    finalQuantity,
-
-                  lineTotal:
-                    line.unitPrice *
-                    finalQuantity,
-                };
-
-              },
-            ),
+                lineTotal:
+                  line.unitPrice *
+                  finalQuantity,
+              };
+            }),
         );
-
       },
       [],
     );
 
-
-  // ==========================================================================
-  // UPDATE CUSTOM STICKER DESIGN
-  // ==========================================================================
 
   const updateCustomStickerDesign =
     useCallback(
@@ -1466,145 +766,65 @@ export function ShopProvider({
         updatedSticker:
           Partial<CustomStickerCartLine>,
       ) => {
-
         setCustomCartLines(
-          (currentLines) =>
-            currentLines.map(
-              (line) => {
+          (current) =>
+            current.map((line) => {
+              if (
+                line.id !== id
+              ) {
+                return line;
+              }
 
-                if (
-                  line.id !== id
-                ) {
-                  return line;
-                }
+              const quantity =
+                clampQuantity(
+                  updatedSticker.quantity ??
+                    line.quantity,
+                );
 
+              const unitPrice =
+                Math.max(
+                  0,
+                  updatedSticker.unitPrice ??
+                    line.unitPrice,
+                );
 
-                const quantity =
-                  clampQuantity(
-                    updatedSticker.quantity ??
-                      line.quantity,
-                  );
+              return {
+                ...line,
 
+                ...updatedSticker,
 
-                const unitPrice =
-                  Math.max(
-                    0,
-                    updatedSticker.unitPrice ??
-                      line.unitPrice,
-                  );
+                type:
+                  "custom" as const,
 
+                quantity,
 
-                const imageScale =
-                  Number.isFinite(
-                    updatedSticker.imageScale ??
-                      line.imageScale,
-                  )
-                    ? Math.max(
-                        0.1,
-                        updatedSticker.imageScale ??
-                          line.imageScale,
-                      )
-                    : 1;
+                unitPrice,
 
-
-                return {
-                  ...line,
-
-                  ...updatedSticker,
-
-                  type:
-                    "custom" as const,
-
-                  quantity,
-
-                  unitPrice,
-
-                  imageScale,
-
-                  lineTotal:
-                    unitPrice *
-                    quantity,
-                };
-
-              },
-            ),
+                lineTotal:
+                  unitPrice * quantity,
+              };
+            }),
         );
-
       },
       [],
     );
 
-
-  // ==========================================================================
-  // CLEAR CUSTOM CART
-  // ==========================================================================
 
   const clearCustomCart =
-    useCallback(
-      () => {
+    useCallback(() => {
+      setCustomCartLines([]);
+      clearStoredCustomCart();
+    }, []);
 
-        setCustomCartLines([]);
-
-
-        if (
-          typeof window !==
-          "undefined"
-        ) {
-
-          try {
-
-            localStorage.removeItem(
-              CUSTOM_CART_KEY,
-            );
-
-          } catch {
-            // Ignore storage errors.
-          }
-
-        }
-
-      },
-      [],
-    );
-
-
-  // ==========================================================================
-  // CLEAR EVERYTHING
-  // ==========================================================================
 
   const clearAllCart =
-    useCallback(
-      () => {
+    useCallback(() => {
+      setCart([]);
+      setCustomCartLines([]);
 
-        setCart([]);
-
-        setCustomCartLines([]);
-
-
-        if (
-          typeof window !==
-          "undefined"
-        ) {
-
-          try {
-
-            localStorage.removeItem(
-              CART_KEY,
-            );
-
-            localStorage.removeItem(
-              CUSTOM_CART_KEY,
-            );
-
-          } catch {
-            // Ignore storage errors.
-          }
-
-        }
-
-      },
-      [],
-    );
+      clearStoredCart();
+      clearStoredCustomCart();
+    }, []);
 
 
   // ==========================================================================
@@ -1612,25 +832,15 @@ export function ShopProvider({
   // ==========================================================================
 
   const openCart =
-    useCallback(
-      () => {
-
-        setIsCartOpen(true);
-
-      },
-      [],
-    );
+    useCallback(() => {
+      setIsCartOpen(true);
+    }, []);
 
 
   const closeCart =
-    useCallback(
-      () => {
-
-        setIsCartOpen(false);
-
-      },
-      [],
-    );
+    useCallback(() => {
+      setIsCartOpen(false);
+    }, []);
 
 
   // ==========================================================================
@@ -1639,44 +849,30 @@ export function ShopProvider({
 
   const toggleWishlist =
     useCallback(
-      (
-        productId: string,
-      ) => {
-
+      (productId: string) => {
         if (
-          !isValidProduct(
-            productId,
-          )
+          !isValidProduct(productId)
         ) {
           return;
         }
 
-
-        setWishlist(
-          (currentWishlist) => {
-
-            if (
-              currentWishlist.includes(
-                productId,
-              )
-            ) {
-
-              return currentWishlist.filter(
-                (id) =>
-                  id !== productId,
-              );
-
-            }
-
-
-            return [
-              ...currentWishlist,
+        setWishlist((current) => {
+          if (
+            current.includes(
               productId,
-            ];
+            )
+          ) {
+            return current.filter(
+              (id) =>
+                id !== productId,
+            );
+          }
 
-          },
-        );
-
+          return [
+            ...current,
+            productId,
+          ];
+        });
       },
       [],
     );
@@ -1684,55 +880,36 @@ export function ShopProvider({
 
   const isWishlisted =
     useCallback(
-      (
-        productId: string,
-      ) => {
-
-        return wishlist.includes(
+      (productId: string) =>
+        wishlist.includes(
           productId,
-        );
-
-      },
-      [
-        wishlist,
-      ],
+        ),
+      [wishlist],
     );
 
 
   // ==========================================================================
-  // DETAILED CART LINES
+  // DETAILED NORMAL CART
   // ==========================================================================
 
   const cartLines =
     useMemo<CartLineDetailed[]>(
-      () => {
-
-        return cart.reduce<
+      () =>
+        cart.reduce<
           CartLineDetailed[]
         >(
-          (
-            result,
-            line,
-          ) => {
-
+          (result, line) => {
             const product =
               productById.get(
                 line.productId,
               );
 
-
-            if (!product) {
+            if (
+              !product ||
+              !product.inStock
+            ) {
               return result;
             }
-
-
-            // A product could theoretically become
-            // unavailable while already in the cart.
-
-            if (!product.inStock) {
-              return result;
-            }
-
 
             const pricing =
               priceFor(
@@ -1740,21 +917,17 @@ export function ShopProvider({
                 line.size,
               );
 
-
             const originalUnitPrice =
               pricing.original ??
               pricing.price;
-
 
             const lineTotal =
               pricing.price *
               line.quantity;
 
-
             const originalLineTotal =
               originalUnitPrice *
               line.quantity;
-
 
             const lineDiscount =
               Math.max(
@@ -1762,7 +935,6 @@ export function ShopProvider({
                 originalLineTotal -
                   lineTotal,
               );
-
 
             result.push({
               productId:
@@ -1787,45 +959,99 @@ export function ShopProvider({
               lineDiscount,
             });
 
-
             return result;
-
           },
           [],
-        );
-
-      },
-      [
-        cart,
-      ],
+        ),
+      [cart],
     );
 
 
   // ==========================================================================
-  // NORMAL CART COUNT
+  // CART TOTALS
   // ==========================================================================
 
-  const normalCartCount =
+  const cartCount =
     useMemo(
       () =>
-        cart.reduce(
-          (
-            total,
-            item,
-          ) =>
-            total +
-            item.quantity,
-          0,
+        getCartItemCount(
+          cart,
+          customCartLines,
         ),
       [
         cart,
+        customCartLines,
       ],
     );
 
 
-  // ==========================================================================
-  // CUSTOM CART COUNT
-  // ==========================================================================
+  const cartSubtotal =
+    useMemo(
+      () =>
+        getCartSubtotal(
+          cartLines,
+          customCartLines,
+        ),
+      [
+        cartLines,
+        customCartLines,
+      ],
+    );
+
+
+  const cartDiscount =
+    useMemo(
+      () =>
+        getCartDiscount(
+          cartLines,
+        ),
+      [cartLines],
+    );
+
+
+  const shippingCost =
+    useMemo(
+      () =>
+        getShippingCost(
+          cartSubtotal,
+        ),
+      [cartSubtotal],
+    );
+
+
+  const cartTotal =
+    useMemo(
+      () =>
+        getCartTotal(
+          cartSubtotal,
+          cartDiscount,
+        ),
+      [
+        cartSubtotal,
+        cartDiscount,
+      ],
+    );
+
+
+  const amountToFreeShipping =
+    useMemo(
+      () =>
+        getAmountToFreeShipping(
+          cartSubtotal,
+        ),
+      [cartSubtotal],
+    );
+
+
+  const hasFreeShipping =
+    useMemo(
+      () =>
+        getHasFreeShipping(
+          cartSubtotal,
+        ),
+      [cartSubtotal],
+    );
+
 
   const customCartCount =
     useMemo(
@@ -1833,145 +1059,14 @@ export function ShopProvider({
         customCartLines.reduce(
           (
             total,
-            item,
+            line,
           ) =>
-            total +
-            item.quantity,
+            total + line.quantity,
           0,
         ),
-      [
-        customCartLines,
-      ],
+      [customCartLines],
     );
 
-
-  // ==========================================================================
-  // TOTAL CART COUNT
-  // ==========================================================================
-
-  const cartCount =
-    normalCartCount +
-    customCartCount;
-
-
-  // ==========================================================================
-  // NORMAL SUBTOTAL
-  // ==========================================================================
-
-  const normalSubtotal =
-    useMemo(
-      () =>
-        cartLines.reduce(
-          (
-            total,
-            item,
-          ) =>
-            total +
-            item.lineTotal,
-          0,
-        ),
-      [
-        cartLines,
-      ],
-    );
-
-
-  // ==========================================================================
-  // CUSTOM SUBTOTAL
-  // ==========================================================================
-
-  const customSubtotal =
-    useMemo(
-      () =>
-        customCartLines.reduce(
-          (
-            total,
-            item,
-          ) =>
-            total +
-            item.lineTotal,
-          0,
-        ),
-      [
-        customCartLines,
-      ],
-    );
-
-
-  // ==========================================================================
-  // CART SUBTOTAL
-  // ==========================================================================
-
-  const cartSubtotal =
-    normalSubtotal +
-    customSubtotal;
-
-
-  // ==========================================================================
-  // CART DISCOUNT
-  // ==========================================================================
-
-  const cartDiscount =
-    useMemo(
-      () =>
-        cartLines.reduce(
-          (
-            total,
-            item,
-          ) =>
-            total +
-            item.lineDiscount,
-          0,
-        ),
-      [
-        cartLines,
-      ],
-    );
-
-
-  // ==========================================================================
-  // FREE SHIPPING
-  // ==========================================================================
-
-  const hasFreeShipping =
-    cartSubtotal >=
-    FREE_SHIPPING_THRESHOLD;
-
-
-  const amountToFreeShipping =
-    hasFreeShipping
-      ? 0
-      : Math.max(
-          0,
-          FREE_SHIPPING_THRESHOLD -
-            cartSubtotal,
-        );
-
-
-  // ==========================================================================
-  // SHIPPING
-  // ==========================================================================
-
-  const shippingCost =
-    cartSubtotal === 0
-      ? 0
-      : hasFreeShipping
-        ? 0
-        : SHIPPING_FEE;
-
-
-  // ==========================================================================
-  // FINAL TOTAL
-  // ==========================================================================
-
-  const cartTotal =
-    cartSubtotal +
-    shippingCost;
-
-
-  // ==========================================================================
-  // WISHLIST COUNT
-  // ==========================================================================
 
   const wishlistCount =
     wishlist.length;
@@ -1984,9 +1079,6 @@ export function ShopProvider({
   const value =
     useMemo<ShopContextValue>(
       () => ({
-
-        // Normal cart
-
         cart,
 
         cartCount,
@@ -2013,9 +1105,6 @@ export function ShopProvider({
 
         clearCart,
 
-
-        // Custom cart
-
         customCartLines,
 
         customCartCount,
@@ -2030,22 +1119,13 @@ export function ShopProvider({
 
         clearCustomCart,
 
-
-        // Combined cart
-
         clearAllCart,
-
-
-        // Drawer
 
         isCartOpen,
 
         openCart,
 
         closeCart,
-
-
-        // Wishlist
 
         wishlist,
 
@@ -2054,7 +1134,6 @@ export function ShopProvider({
         isWishlisted,
 
         toggleWishlist,
-
       }),
       [
         cart,
@@ -2108,21 +1187,29 @@ export function ShopProvider({
 // ============================================================================
 
 export function useShop() {
-
   const context =
     useContext(
       ShopContext,
     );
 
-
   if (!context) {
-
     throw new Error(
       "useShop must be used inside ShopProvider",
     );
-
   }
-
 
   return context;
 }
+
+
+// ============================================================================
+// TYPE RE-EXPORTS
+// ============================================================================
+
+export type {
+  CartLine,
+  CartLineDetailed,
+  CustomStickerCartLine,
+  CustomStickerFinish,
+  CustomStickerShape,
+};
