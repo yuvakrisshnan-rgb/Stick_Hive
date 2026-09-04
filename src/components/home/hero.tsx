@@ -1,10 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
-import FloatingSticker from "@/components/animations/floating-sticker";
 import Counter from "@/components/animations/counter";
 import BackgroundEffects from "@/components/animations/background-effects";
 
@@ -12,16 +12,34 @@ import { useMousePosition } from "@/hooks/use-mouse-position";
 
 import PremiumButton from "@/components/ui/premium-button";
 
+import { PRODUCTS } from "@/lib/product-data";
+
+import { StickerImage } from "@/components/shop/sticker-image";
+
+
+// ============================================================================
+// COLLAGE PRODUCTS — pick 4 real products to feature, scattered like
+// stickers on a desk rather than a single generic placeholder shape
+// ============================================================================
+
+const COLLAGE_PRODUCTS = PRODUCTS.filter(
+  (product) => product.inStock,
+).slice(0, 4);
+
+
 export default function Hero() {
   const mouse = useMousePosition();
   const shouldReduceMotion = useReducedMotion();
 
-  /*
-   * Mouse movement is intentionally subtle.
-   * When reduced motion is enabled, everything stays still.
-   */
   const moveX = shouldReduceMotion ? 0 : (mouse.x - 500) / 40;
   const moveY = shouldReduceMotion ? 0 : (mouse.y - 400) / 40;
+
+  const collagePositions = [
+    { top: "6%", left: "8%", rotate: -10, size: "size-32 md:size-40" },
+    { top: "10%", right: "10%", rotate: 8, size: "size-40 md:size-52" },
+    { bottom: "16%", left: "4%", rotate: 6, size: "size-36 md:size-44" },
+    { bottom: "6%", right: "6%", rotate: -6, size: "size-28 md:size-36" },
+  ];
 
   return (
     <section
@@ -120,7 +138,8 @@ export default function Hero() {
           </motion.div>
 
           {/* ==================================================
-              HEADING
+              HEADING — serif italic accent on the emphasis line,
+              matching the About page's editorial treatment
           ================================================== */}
 
           <motion.h1
@@ -152,6 +171,9 @@ export default function Hero() {
             <span
               className="
                 block
+                font-serif
+                font-medium
+                italic
                 text-honey-orange
               "
             >
@@ -216,10 +238,6 @@ export default function Hero() {
               gap-4
             "
           >
-            {/* =================================================
-                PRIMARY CTA
-            ================================================= */}
-
             <motion.div
               whileHover={
                 shouldReduceMotion
@@ -245,10 +263,6 @@ export default function Hero() {
                 </PremiumButton>
               </Link>
             </motion.div>
-
-            {/* =================================================
-                SECONDARY CTA
-            ================================================= */}
 
             <motion.div
               whileHover={
@@ -315,10 +329,6 @@ export default function Hero() {
               gap-12
             "
           >
-            {/* =================================================
-                STICKERS CREATED
-            ================================================= */}
-
             <div>
               <h3
                 className="
@@ -336,10 +346,6 @@ export default function Hero() {
                 Stickers Created
               </p>
             </div>
-
-            {/* =================================================
-                CUSTOM DESIGNS
-            ================================================= */}
 
             <div>
               <h3
@@ -362,7 +368,8 @@ export default function Hero() {
         </motion.div>
 
         {/* ====================================================
-            RIGHT VISUAL
+            RIGHT VISUAL — real sticker collage, scattered like
+            stickers on a desk, instead of a text-in-circle
         ==================================================== */}
 
         <motion.div
@@ -387,27 +394,7 @@ export default function Hero() {
             justify-center
           "
         >
-          {/* ==================================================
-              VISUAL CARD
-          ================================================== */}
-
-          <motion.div
-            animate={
-              shouldReduceMotion
-                ? undefined
-                : {
-                    y: [-5, 5, -5],
-                  }
-            }
-            transition={
-              shouldReduceMotion
-                ? undefined
-                : {
-                    duration: 5,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }
-            }
+          <div
             className="
               relative
               flex
@@ -453,7 +440,8 @@ export default function Hero() {
             />
 
             {/* =================================================
-                MAIN STICKER
+                CENTER BEE — small, brand touchpoint, not the
+                whole visual anymore
             ================================================= */}
 
             <motion.div
@@ -461,119 +449,93 @@ export default function Hero() {
                 shouldReduceMotion
                   ? undefined
                   : {
-                      y: [-10, 10, -10],
+                      y: [-6, 6, -6],
+                      rotate: [-4, 4, -4],
                     }
               }
               transition={
                 shouldReduceMotion
                   ? undefined
                   : {
-                      duration: 4,
+                      duration: 5,
                       repeat: Infinity,
                       ease: "easeInOut",
-                    }
-              }
-              whileHover={
-                shouldReduceMotion
-                  ? undefined
-                  : {
-                      scale: 1.03,
                     }
               }
               className="
                 relative
                 z-10
                 flex
-                size-64
+                size-16
                 items-center
                 justify-center
                 rounded-full
                 bg-hive-yellow
-                text-center
-                text-5xl
-                font-black
-                leading-none
-                shadow-xl
-              "
-            >
-              <span>
-                STICK
-                <br />
-                HIVE
-              </span>
-            </motion.div>
-
-            {/* =================================================
-                FLOATING STICKER 1
-            ================================================= */}
-
-            <FloatingSticker
-              delay={0}
-              rotate={12}
-              x={moveX * -1}
-              y={moveY * -1}
-              className="
-                absolute
-                left-10
-                top-10
-                rounded-2xl
-                bg-white
-                p-5
-                text-3xl
-                shadow-lg
-              "
-            >
-              ✨
-            </FloatingSticker>
-
-            {/* =================================================
-                FLOATING STICKER 2
-            ================================================= */}
-
-            <FloatingSticker
-              delay={1}
-              rotate={-12}
-              x={moveX}
-              y={moveY}
-              className="
-                absolute
-                right-10
-                top-20
-                rounded-2xl
-                bg-white
-                p-5
                 text-3xl
                 shadow-lg
               "
             >
               🐝
-            </FloatingSticker>
+            </motion.div>
 
             {/* =================================================
-                FLOATING STICKER 3
+                STICKER COLLAGE — real product images, scattered
+                and rotated like stickers on a desk
             ================================================= */}
 
-            <FloatingSticker
-              delay={0.5}
-              rotate={8}
-              x={moveX * 0.5}
-              y={moveY * 0.5}
-              className="
-                absolute
-                bottom-14
-                left-20
-                rounded-2xl
-                bg-white
-                p-5
-                text-3xl
-                shadow-lg
-              "
-            >
-              ⭐
-            </FloatingSticker>
+            {COLLAGE_PRODUCTS.map((product, index) => {
+              const position = collagePositions[index];
+
+              return (
+                <motion.div
+                  key={product.id}
+                  animate={
+                    shouldReduceMotion
+                      ? undefined
+                      : {
+                          y: [-8, 8, -8],
+                        }
+                  }
+                  transition={
+                    shouldReduceMotion
+                      ? undefined
+                      : {
+                          duration: 4 + index * 0.6,
+                          repeat: Infinity,
+                          ease: "easeInOut",
+                          delay: index * 0.4,
+                        }
+                  }
+                  whileHover={
+                    shouldReduceMotion
+                      ? undefined
+                      : { scale: 1.08, rotate: 0 }
+                  }
+                  style={{
+                    top: position.top,
+                    left: position.left,
+                    right: position.right,
+                    bottom: position.bottom,
+                    rotate: position.rotate,
+                  }}
+                  className={`
+                    absolute
+                    ${position.size}
+                    overflow-hidden
+                    rounded-[20px]
+                    border-4
+                    border-white
+                    bg-white
+                    shadow-[0_20px_40px_-10px_rgba(0,0,0,0.25)]
+                  `}
+                >
+                  <StickerImage product={product} />
+                </motion.div>
+              );
+            })}
 
             {/* =================================================
-                SMALL DECORATIVE DOT
+                SMALL DECORATIVE DOTS
             ================================================= */}
 
             <div
@@ -599,7 +561,7 @@ export default function Hero() {
                 bg-mint
               "
             />
-          </motion.div>
+          </div>
         </motion.div>
       </div>
 

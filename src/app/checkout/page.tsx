@@ -218,6 +218,16 @@ export default function CheckoutPage() {
 
 
   // ==========================================================================
+  // EMAIL VERIFICATION
+  // ==========================================================================
+
+  const [
+    emailVerified,
+    setEmailVerified,
+  ] = useState(false);
+
+
+  // ==========================================================================
   // ORDER STATE
   // ==========================================================================
 
@@ -458,6 +468,20 @@ export default function CheckoutPage() {
 
 
     // ------------------------------------------------------------------------
+    // STOP IF EMAIL NOT VERIFIED
+    // ------------------------------------------------------------------------
+
+    if (!emailVerified) {
+
+      setOrderError(
+        "Please verify your email address before placing your order.",
+      );
+
+      return;
+    }
+
+
+    // ------------------------------------------------------------------------
     // START PAYMENT ANIMATION
     // ------------------------------------------------------------------------
 
@@ -576,11 +600,6 @@ export default function CheckoutPage() {
 
       // ======================================================================
       // CUSTOM PRODUCTS
-      // ======================================================================
-      //
-      // Custom stickers no longer carry a single imageUrl — they carry
-      // multiple layers, flattened into a thumbnailUrl for display
-      // purposes (cart, receipt, order history).
       // ======================================================================
 
       const customOrderItems:
@@ -1064,6 +1083,12 @@ export default function CheckoutPage() {
               errors={
                 errors
               }
+              emailVerified={
+                emailVerified
+              }
+              onEmailVerified={
+                setEmailVerified
+              }
             />
 
           </div>
@@ -1505,7 +1530,8 @@ export default function CheckoutPage() {
                 handlePlaceOrder
               }
               disabled={
-                isPlacingOrder
+                isPlacingOrder ||
+                !emailVerified
               }
               aria-busy={
                 isPlacingOrder
@@ -1557,6 +1583,12 @@ export default function CheckoutPage() {
                   </span>
 
                 </>
+
+              ) : !emailVerified ? (
+
+                <span>
+                  Verify Email To Continue
+                </span>
 
               ) : (
 

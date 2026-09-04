@@ -1,6 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { CheckCircle2, Loader2 } from "lucide-react";
+
+import {
+  lookupPincode,
+  isLikelyValidIndianMobile,
+  isLikelyValidEmail,
+} from "@/lib/address-validation";
 
 
 // ============================================================================
@@ -9,48 +17,32 @@ import type { Dispatch, SetStateAction } from "react";
 
 export type CustomerAddress = {
   addressLine1: string;
-
   addressLine2?: string;
-
   landmark?: string;
-
   city: string;
-
   state: string;
-
   pincode: string;
 };
 
 
 export type CustomerData = {
   name: string;
-
   email: string;
-
   phone: string;
-
   address: CustomerAddress;
 };
 
 
 export type CustomerErrors = {
   name?: string;
-
   email?: string;
-
   phone?: string;
-
   address?: {
     addressLine1?: string;
-
     addressLine2?: string;
-
     landmark?: string;
-
     city?: string;
-
     state?: string;
-
     pincode?: string;
   };
 };
@@ -62,12 +54,10 @@ export type CustomerErrors = {
 
 type CustomerFormProps = {
   customer: CustomerData;
-
-  setCustomer: Dispatch<
-    SetStateAction<CustomerData>
-  >;
-
+  setCustomer: Dispatch<SetStateAction<CustomerData>>;
   errors: CustomerErrors;
+  emailVerified: boolean;
+  onEmailVerified: (verified: boolean) => void;
 };
 
 
@@ -124,7 +114,33 @@ export default function CustomerForm({
   customer,
   setCustomer,
   errors,
+  emailVerified,
+  onEmailVerified,
 }: CustomerFormProps) {
+
+
+  // ==========================================================================
+  // PIN CODE LOOKUP STATE
+  // ==========================================================================
+
+  const [pincodeStatus, setPincodeStatus] = useState<
+    "idle" | "checking" | "valid" | "invalid"
+  >("idle");
+
+  const [pincodeMessage, setPincodeMessage] = useState("");
+
+
+  // ==========================================================================
+  // EMAIL OTP STATE
+  // ==========================================================================
+
+  const [otpStage, setOtpStage] = useState<
+    "idle" | "sending" | "sent" | "verifying" | "error"
+  >("idle");
+
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [verifiedEmail, setVerifiedEmail] = useState("");
 
 
   // ==========================================================================
@@ -137,9 +153,16 @@ export default function CustomerForm({
   ) {
     setCustomer((previous) => ({
       ...previous,
-
       [field]: value,
     }));
+
+    // If the email changes after being verified, reset verification.
+    if (field === "email" && verifiedEmail && value !== verifiedEmail) {
+      onEmailVerified(false);
+      setOtpStage("idle");
+      setOtpCode("");
+      setVerifiedEmail("");
+    }
   }
 
 
@@ -153,10 +176,8 @@ export default function CustomerForm({
   ) {
     setCustomer((previous) => ({
       ...previous,
-
       address: {
         ...previous.address,
-
         [field]: value,
       },
     }));
@@ -167,33 +188,123 @@ export default function CustomerForm({
   // PHONE INPUT
   // ==========================================================================
 
-  function handlePhoneChange(
-    value: string,
-  ) {
-    const digitsOnly =
-      value.replace(/\D/g, "").slice(0, 10);
-
-    updateCustomerField(
-      "phone",
-      digitsOnly,
-    );
+  function handlePhoneChange(value: string) {
+    const digitsOnly = value.replace(/\D/g, "").slice(0, 10);
+    updateCustomerField("phone", digitsOnly);
   }
 
 
   // ==========================================================================
-  // PINCODE INPUT
+  // PINCODE INPUT — live lookup + auto-fill city/state
   // ==========================================================================
 
-  function handlePincodeChange(
-    value: string,
-  ) {
-    const digitsOnly =
-      value.replace(/\D/g, "").slice(0, 6);
+  async function handlePincodeChange(value: string) {
+    const digitsOnly = value.replace(/\D/g, "").slice(0, 6);
+    updateAddressField("pincode", digitsOnly);
 
-    updateAddressField(
-      "pincode",
-      digitsOnly,
-    );
+    if (digitsOnly.length !== 6) {
+      setPincodeStatus("idle");
+      setPincodeMessage("");
+      return;
+    }
+
+    setPincodeStatus("checking");
+
+    const result = await lookupPincode(digitsOnly);
+
+    if (result.valid) {
+      setPincodeStatus("valid");
+      setPincodeMessage(`${result.city}, ${result.state}`);
+
+      setCustomer((previous) => ({
+        ...previous,
+        address: {
+          ...previous.address,
+          city: result.city ?? previous.address.city,
+          state: result.state ?? previous.address.state,
+        },
+      }));
+    } else {
+      setPincodeStatus("invalid");
+      setPincodeMessage(result.error ?? "Invalid PIN code.");
+    }
+  }
+
+
+  // ==========================================================================
+  // SEND EMAIL OTP
+  // ==========================================================================
+
+  async function handleSendOtp() {
+    if (!isLikelyValidEmail(customer.email)) {
+      setOtpError("Please enter a valid email address first.");
+      setOtpStage("error");
+      return;
+    }
+
+    setOtpStage("sending");
+    setOtpError("");
+
+    try {
+      const response = await fetch("/api/send-email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: customer.email }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setOtpError(data.error ?? "Unable to send verification code.");
+        setOtpStage("error");
+        return;
+      }
+
+      setOtpStage("sent");
+    } catch (error) {
+      console.error("Failed to send OTP:", error);
+      setOtpError("Something went wrong. Please try again.");
+      setOtpStage("error");
+    }
+  }
+
+
+  // ==========================================================================
+  // VERIFY EMAIL OTP
+  // ==========================================================================
+
+  async function handleVerifyOtp() {
+    if (otpCode.length !== 6) {
+      setOtpError("Enter the 6-digit code sent to your email.");
+      return;
+    }
+
+    setOtpStage("verifying");
+    setOtpError("");
+
+    try {
+      const response = await fetch("/api/verify-email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: customer.email, code: otpCode }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setOtpError(data.error ?? "Incorrect code.");
+        setOtpStage("sent");
+        return;
+      }
+
+      setVerifiedEmail(customer.email);
+      onEmailVerified(true);
+      setOtpStage("idle");
+    } catch (error) {
+      console.error("Failed to verify OTP:", error);
+      setOtpError("Something went wrong. Please try again.");
+      setOtpStage("sent");
+    }
   }
 
 
@@ -339,7 +450,7 @@ export default function CustomerForm({
 
 
         {/* ================================================================ */}
-        {/* EMAIL                                                            */}
+        {/* EMAIL — with OTP verification                                    */}
         {/* ================================================================ */}
 
         <div>
@@ -360,36 +471,109 @@ export default function CustomerForm({
           </label>
 
 
-          <input
-            id="checkout-email"
-            type="email"
-            value={customer.email}
-            onChange={(event) =>
-              updateCustomerField(
-                "email",
-                event.target.value,
-              )
-            }
-            placeholder="you@example.com"
-            autoComplete="email"
-            className={`
-              h-14
-              w-full
-              rounded-xl
-              border
-              px-5
-              text-base
-              outline-none
-              transition
-              placeholder:text-black/40
+          <div className="flex gap-2">
 
-              ${
-                errors.email
-                  ? "border-red-500 focus:border-red-500"
-                  : "border-black/15 focus:border-black"
+            <input
+              id="checkout-email"
+              type="email"
+              value={customer.email}
+              onChange={(event) =>
+                updateCustomerField(
+                  "email",
+                  event.target.value,
+                )
               }
-            `}
-          />
+              disabled={emailVerified}
+              placeholder="you@example.com"
+              autoComplete="email"
+              className={`
+                h-14
+                w-full
+                rounded-xl
+                border
+                px-5
+                text-base
+                outline-none
+                transition
+                placeholder:text-black/40
+                disabled:bg-black/[0.03]
+                disabled:text-black/60
+
+                ${
+                  errors.email
+                    ? "border-red-500 focus:border-red-500"
+                    : "border-black/15 focus:border-black"
+                }
+              `}
+            />
+
+
+            {emailVerified ? (
+
+              <div
+                className="
+                  flex
+                  h-14
+                  shrink-0
+                  items-center
+                  gap-1.5
+                  rounded-xl
+                  bg-green-50
+                  px-4
+                  text-sm
+                  font-bold
+                  text-green-600
+                "
+              >
+                <CheckCircle2 size={17} />
+                Verified
+              </div>
+
+            ) : (
+
+              <button
+                type="button"
+                onClick={handleSendOtp}
+                disabled={
+                  otpStage === "sending" ||
+                  otpStage === "sent" ||
+                  otpStage === "verifying"
+                }
+                className="
+                  flex
+                  h-14
+                  shrink-0
+                  items-center
+                  gap-2
+                  rounded-xl
+                  bg-black
+                  px-5
+                  text-sm
+                  font-bold
+                  text-white
+                  transition
+                  hover:scale-[1.02]
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                  disabled:hover:scale-100
+                "
+              >
+
+                {otpStage === "sending" && (
+                  <Loader2 size={15} className="animate-spin" />
+                )}
+
+                {otpStage === "sending"
+                  ? "Sending..."
+                  : otpStage === "sent"
+                    ? "Code Sent"
+                    : "Verify"}
+
+              </button>
+
+            )}
+
+          </div>
 
 
           {errors.email && (
@@ -403,6 +587,120 @@ export default function CustomerForm({
               "
             >
               {errors.email}
+            </p>
+          )}
+
+
+          {/* ================================================================ */}
+          {/* OTP CODE INPUT                                                    */}
+          {/* ================================================================ */}
+
+          {(otpStage === "sent" || otpStage === "verifying") && !emailVerified && (
+
+            <div
+              className="
+                mt-3
+                flex
+                items-center
+                gap-2
+                rounded-xl
+                bg-cream
+                p-3
+              "
+            >
+
+              <input
+                type="text"
+                inputMode="numeric"
+                value={otpCode}
+                onChange={(event) =>
+                  setOtpCode(
+                    event.target.value.replace(/\D/g, "").slice(0, 6),
+                  )
+                }
+                placeholder="6-digit code"
+                maxLength={6}
+                className="
+                  h-11
+                  min-w-0
+                  flex-1
+                  rounded-lg
+                  border
+                  border-black/15
+                  bg-white
+                  px-4
+                  text-base
+                  tracking-[0.3em]
+                  outline-none
+                  focus:border-black
+                "
+              />
+
+
+              <button
+                type="button"
+                onClick={handleVerifyOtp}
+                disabled={otpStage === "verifying" || otpCode.length !== 6}
+                className="
+                  flex
+                  h-11
+                  shrink-0
+                  items-center
+                  gap-1.5
+                  rounded-lg
+                  bg-black
+                  px-4
+                  text-sm
+                  font-bold
+                  text-white
+                  transition
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                "
+              >
+
+                {otpStage === "verifying" && (
+                  <Loader2 size={14} className="animate-spin" />
+                )}
+
+                Confirm
+
+              </button>
+
+
+              <button
+                type="button"
+                onClick={handleSendOtp}
+                disabled={otpStage === "verifying"}
+                className="
+                  shrink-0
+                  text-xs
+                  font-bold
+                  text-black/50
+                  underline
+                  underline-offset-2
+                  hover:text-black
+                "
+              >
+                Resend
+              </button>
+
+            </div>
+
+          )}
+
+
+          {otpError && (
+            <p
+              className="
+                mt-2
+                px-1
+                text-sm
+                font-medium
+                text-red-500
+              "
+            >
+              {otpError}
             </p>
           )}
 
@@ -750,7 +1048,147 @@ export default function CustomerForm({
 
 
         {/* ================================================================ */}
-        {/* CITY + STATE                                                     */}
+        {/* PIN CODE — moved above city/state since it now drives them       */}
+        {/* ================================================================ */}
+
+        <div className="mt-5">
+
+          <label
+            htmlFor="checkout-pincode"
+            className="
+              mb-2
+              block
+              text-sm
+              font-bold
+            "
+          >
+            PIN Code
+            <span className="ml-1 text-red-500">
+              *
+            </span>
+          </label>
+
+
+          <div className="relative">
+
+            <input
+              id="checkout-pincode"
+              type="text"
+              inputMode="numeric"
+              value={
+                customer.address.pincode
+              }
+              onChange={(event) =>
+                handlePincodeChange(
+                  event.target.value,
+                )
+              }
+              placeholder="6-digit PIN code"
+              autoComplete="postal-code"
+              maxLength={6}
+              className={`
+                h-14
+                w-full
+                rounded-xl
+                border
+                px-5
+                pr-11
+                text-base
+                outline-none
+                transition
+                placeholder:text-black/40
+
+                ${
+                  pincodeStatus === "invalid" || errors.address?.pincode
+                    ? "border-red-500 focus:border-red-500"
+                    : pincodeStatus === "valid"
+                      ? "border-green-500 focus:border-green-500"
+                      : "border-black/15 focus:border-black"
+                }
+              `}
+            />
+
+
+            {pincodeStatus === "checking" && (
+              <Loader2
+                size={18}
+                className="
+                  absolute
+                  right-4
+                  top-1/2
+                  -translate-y-1/2
+                  animate-spin
+                  text-black/30
+                "
+              />
+            )}
+
+
+            {pincodeStatus === "valid" && (
+              <CheckCircle2
+                size={18}
+                className="
+                  absolute
+                  right-4
+                  top-1/2
+                  -translate-y-1/2
+                  text-green-600
+                "
+              />
+            )}
+
+          </div>
+
+
+          {pincodeStatus === "valid" && (
+            <p
+              className="
+                mt-2
+                px-1
+                text-sm
+                font-medium
+                text-green-600
+              "
+            >
+              ✓ {pincodeMessage}
+            </p>
+          )}
+
+
+          {pincodeStatus === "invalid" && (
+            <p
+              className="
+                mt-2
+                px-1
+                text-sm
+                font-medium
+                text-red-500
+              "
+            >
+              {pincodeMessage}
+            </p>
+          )}
+
+
+          {errors.address?.pincode && pincodeStatus === "idle" && (
+            <p
+              className="
+                mt-2
+                px-1
+                text-sm
+                font-medium
+                text-red-500
+              "
+            >
+              {errors.address.pincode}
+            </p>
+          )}
+
+        </div>
+
+
+        {/* ================================================================ */}
+        {/* CITY + STATE — auto-filled from PIN, editable as fallback        */}
         {/* ================================================================ */}
 
         <div
@@ -934,80 +1372,6 @@ export default function CustomerForm({
 
         </div>
 
-
-        {/* ================================================================ */}
-        {/* PIN CODE                                                         */}
-        {/* ================================================================ */}
-
-        <div className="mt-5">
-
-          <label
-            htmlFor="checkout-pincode"
-            className="
-              mb-2
-              block
-              text-sm
-              font-bold
-            "
-          >
-            PIN Code
-            <span className="ml-1 text-red-500">
-              *
-            </span>
-          </label>
-
-
-          <input
-            id="checkout-pincode"
-            type="text"
-            inputMode="numeric"
-            value={
-              customer.address.pincode
-            }
-            onChange={(event) =>
-              handlePincodeChange(
-                event.target.value,
-              )
-            }
-            placeholder="6-digit PIN code"
-            autoComplete="postal-code"
-            maxLength={6}
-            className={`
-              h-14
-              w-full
-              rounded-xl
-              border
-              px-5
-              text-base
-              outline-none
-              transition
-              placeholder:text-black/40
-
-              ${
-                errors.address?.pincode
-                  ? "border-red-500 focus:border-red-500"
-                  : "border-black/15 focus:border-black"
-              }
-            `}
-          />
-
-
-          {errors.address?.pincode && (
-            <p
-              className="
-                mt-2
-                px-1
-                text-sm
-                font-medium
-                text-red-500
-              "
-            >
-              {errors.address.pincode}
-            </p>
-          )}
-
-        </div>
-
       </div>
 
     </section>
@@ -1082,11 +1446,7 @@ export function validateCustomer(
     errors.email =
       "Email address is required.";
 
-  } else if (
-    !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(
-      email,
-    )
-  ) {
+  } else if (!isLikelyValidEmail(email)) {
 
     errors.email =
       "Please enter a valid email address.";
@@ -1103,9 +1463,7 @@ export function validateCustomer(
     errors.phone =
       "Phone number is required.";
 
-  } else if (
-    !/^[6-9]\d{9}$/.test(phone)
-  ) {
+  } else if (!isLikelyValidIndianMobile(phone)) {
 
     errors.phone =
       "Enter a valid 10-digit Indian mobile number.";
@@ -1121,10 +1479,6 @@ export function validateCustomer(
     NonNullable<CustomerErrors["address"]> =
     {};
 
-
-  // --------------------------------------------------------------------------
-  // Address Line 1
-  // --------------------------------------------------------------------------
 
   if (
     !address.addressLine1.trim()
@@ -1150,10 +1504,6 @@ export function validateCustomer(
   }
 
 
-  // --------------------------------------------------------------------------
-  // Address Line 2
-  // --------------------------------------------------------------------------
-
   if (
     address.addressLine2 &&
     address.addressLine2.trim().length > 150
@@ -1165,10 +1515,6 @@ export function validateCustomer(
   }
 
 
-  // --------------------------------------------------------------------------
-  // Landmark
-  // --------------------------------------------------------------------------
-
   if (
     address.landmark &&
     address.landmark.trim().length > 100
@@ -1179,10 +1525,6 @@ export function validateCustomer(
 
   }
 
-
-  // --------------------------------------------------------------------------
-  // City
-  // --------------------------------------------------------------------------
 
   if (
     !address.city.trim()
@@ -1200,10 +1542,6 @@ export function validateCustomer(
 
   }
 
-
-  // --------------------------------------------------------------------------
-  // State
-  // --------------------------------------------------------------------------
 
   if (
     !address.state.trim()
@@ -1223,10 +1561,6 @@ export function validateCustomer(
 
   }
 
-
-  // --------------------------------------------------------------------------
-  // PIN CODE
-  // --------------------------------------------------------------------------
 
   if (
     !address.pincode.trim()

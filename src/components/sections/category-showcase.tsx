@@ -15,7 +15,7 @@ import { StickerImage } from "@/components/shop/sticker-image";
 
 
 // ============================================================================
-// CATEGORY CONFIGURATION
+// CATEGORY CONFIGURATION — retinted to StickHive's actual brand palette
 // ============================================================================
 
 const CATEGORY_CONFIG = [
@@ -24,8 +24,12 @@ const CATEGORY_CONFIG = [
     name: "Anime",
     description:
       "Characters, energy and worlds that never stop inspiring.",
-    color: "bg-sky-300",
-    accent: "text-sky-700",
+    color: "bg-mint",
+    textColor: "text-ink",
+    mutedText: "text-black/55",
+    badgeText: "text-black/55",
+    ctaBg: "bg-black",
+    ctaText: "text-white",
     slug: "anime",
   },
   {
@@ -34,7 +38,11 @@ const CATEGORY_CONFIG = [
     description:
       "Level up your setup with stickers made for gamers.",
     color: "bg-honey-orange",
-    accent: "text-orange-700",
+    textColor: "text-ink",
+    mutedText: "text-black/60",
+    badgeText: "text-black/55",
+    ctaBg: "bg-black",
+    ctaText: "text-white",
     slug: "gaming",
   },
   {
@@ -42,8 +50,12 @@ const CATEGORY_CONFIG = [
     name: "Marvel & DC",
     description:
       "Superheroes, legends and iconic moments.",
-    color: "bg-emerald-200",
-    accent: "text-emerald-700",
+    color: "bg-hive-yellow",
+    textColor: "text-ink",
+    mutedText: "text-black/60",
+    badgeText: "text-black/55",
+    ctaBg: "bg-black",
+    ctaText: "text-white",
     slug: "marvel-dc",
   },
   {
@@ -51,8 +63,12 @@ const CATEGORY_CONFIG = [
     name: "Technology",
     description:
       "For builders, developers, innovators and tech lovers.",
-    color: "bg-violet-300",
-    accent: "text-violet-700",
+    color: "bg-[#123F3A]",
+    textColor: "text-white",
+    mutedText: "text-white/70",
+    badgeText: "text-hive-yellow",
+    ctaBg: "bg-hive-yellow",
+    ctaText: "text-black",
     slug: "technology",
   },
 ];
@@ -104,13 +120,6 @@ export default function CategoryShowcase() {
     setActiveCategory,
   ] = useState(0);
 
-
-  /*
-   * Keep the active category synced with
-   * the section currently visible on screen.
-   *
-   * There are NO navigation dots.
-   */
 
   useEffect(() => {
 
@@ -271,17 +280,18 @@ export default function CategoryShowcase() {
               className="
                 mt-3
                 max-w-3xl
-                font-display
+                font-serif
                 text-5xl
-                font-extrabold
-                leading-[0.95]
+                font-medium
+                italic
+                leading-[1.05]
                 tracking-tight
                 text-ink
                 md:text-6xl
               "
             >
               Find your
-              <span className="text-honey-orange">
+              <span className="not-italic text-honey-orange">
                 {" "}sticker world.
               </span>
             </h2>
@@ -378,12 +388,6 @@ function CategoryScene({
     );
 
 
-  /*
-   * If the exact category doesn't exist in
-   * product-data, use products from the
-   * complete catalogue as a visual fallback.
-   */
-
   const fallbackProducts =
     useMemo(
       () =>
@@ -470,15 +474,19 @@ function CategoryScene({
           {/* ============================================================ */}
 
           <div
-            className="
+            className={`
               pointer-events-none
               absolute
               inset-4
               rounded-[30px]
               border
               border-dashed
-              border-black/15
-            "
+              ${
+                category.textColor === "text-white"
+                  ? "border-white/15"
+                  : "border-black/15"
+              }
+            `}
           />
 
 
@@ -487,7 +495,7 @@ function CategoryScene({
           {/* ============================================================ */}
 
           <div
-            className="
+            className={`
               pointer-events-none
               absolute
               -right-5
@@ -497,9 +505,13 @@ function CategoryScene({
               text-[220px]
               font-black
               leading-none
-              text-black/5
               md:text-[300px]
-            "
+              ${
+                category.textColor === "text-white"
+                  ? "text-white/5"
+                  : "text-black/5"
+              }
+            `}
           >
             {String(
               index + 1,
@@ -553,43 +565,44 @@ function CategoryScene({
             >
 
               <p
-                className="
+                className={`
                   text-xs
                   font-bold
                   uppercase
                   tracking-[0.2em]
-                  text-black/55
-                "
+                  ${category.badgeText}
+                `}
               >
                 Collection
               </p>
 
 
               <h3
-                className="
+                className={`
                   mt-4
-                  font-display
+                  font-serif
                   text-5xl
-                  font-extrabold
-                  leading-[0.9]
+                  font-medium
+                  italic
+                  leading-[0.95]
                   tracking-tight
-                  text-ink
                   md:text-7xl
-                "
+                  ${category.textColor}
+                `}
               >
                 {category.name}
               </h3>
 
 
               <p
-                className="
+                className={`
                   mt-6
                   max-w-md
                   text-base
                   leading-relaxed
-                  text-black/65
                   md:text-lg
-                "
+                  ${category.mutedText}
+                `}
               >
                 {category.description}
               </p>
@@ -599,22 +612,22 @@ function CategoryScene({
                 href={`/shop?category=${encodeURIComponent(
                   category.name,
                 )}`}
-                className="
+                className={`
                   group
                   mt-8
                   inline-flex
                   items-center
                   gap-3
                   rounded-full
-                  bg-black
+                  ${category.ctaBg}
+                  ${category.ctaText}
                   px-6
                   py-3.5
                   text-sm
                   font-bold
-                  text-white
                   transition
                   hover:scale-105
-                "
+                `}
               >
 
                 Explore {category.name}

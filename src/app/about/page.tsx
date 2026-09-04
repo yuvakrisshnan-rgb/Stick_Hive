@@ -1,22 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import {
-  ArrowDown,
   ArrowRight,
-  Camera,
   Sparkles,
 } from "lucide-react";
 
-
-/* ============================================================
-   TYPES
-============================================================ */
-
-type ScrollDirection = "up" | "down";
-
-type BeeDirection = "left" | "right";
+import BuzzingBees from "@/components/about/buzzing-bees";
 
 
 /* ============================================================
@@ -29,6 +19,7 @@ const journey = [
     title: "It started in a classroom",
     text:
       "It all started with a simple classroom activity. We were asked to come up with a business idea, and after plenty of brainstorming, discussions and a few wild ideas, StickHive was born.",
+    tone: "bg-hive-yellow/18",
   },
 
   {
@@ -36,6 +27,7 @@ const journey = [
     title: "An idea started to stick",
     text:
       "We wanted to create something that felt personal. Stickers became our way of turning emotions, interests and personalities into something people could carry with them every day.",
+    tone: "bg-mint/25",
   },
 
   {
@@ -43,6 +35,7 @@ const journey = [
     title: "Students building something real",
     text:
       "We didn't have everything figured out. We were students learning as we went — experimenting with designs, understanding customers, figuring out branding and discovering what it really takes to turn an idea into something real.",
+    tone: "bg-honey-orange/12",
   },
 
   {
@@ -50,6 +43,7 @@ const journey = [
     title: "From our idea to yours",
     text:
       "What started as a classroom project became something we wanted to take seriously. StickHive is our attempt to build a brand that feels young, creative and relatable — one sticker at a time.",
+    tone: "bg-black/[0.04]",
   },
 ];
 
@@ -59,303 +53,6 @@ const journey = [
 ============================================================ */
 
 export default function AboutPage() {
-
-  /* ==========================================================
-     REFERENCES
-  ========================================================== */
-
-  const timelineRef =
-    useRef<HTMLDivElement | null>(null);
-
-  const pathRef =
-    useRef<SVGPathElement | null>(null);
-
-  const animationFrameRef =
-    useRef<number | null>(null);
-
-  const lastScrollY =
-    useRef(0);
-
-  const lastProgress =
-    useRef(-1);
-
-  const lastDirection =
-    useRef<ScrollDirection>("down");
-
-
-  /* ==========================================================
-     BEE STATE
-  ========================================================== */
-
-  const [
-    beePosition,
-    setBeePosition,
-  ] = useState({
-    x: 100,
-    y: 70,
-  });
-
-
-  const [
-    beeDirection,
-    setBeeDirection,
-  ] = useState<BeeDirection>("right");
-
-
-  /* ==========================================================
-     SCROLL DIRECTION
-  ========================================================== */
-
-  useEffect(() => {
-
-    lastScrollY.current =
-      window.scrollY;
-
-
-    const handleScroll = () => {
-
-      const currentScrollY =
-        window.scrollY;
-
-
-      if (
-        currentScrollY >
-        lastScrollY.current
-      ) {
-
-        lastDirection.current =
-          "down";
-
-      } else if (
-        currentScrollY <
-        lastScrollY.current
-      ) {
-
-        lastDirection.current =
-          "up";
-
-      }
-
-
-      lastScrollY.current =
-        currentScrollY;
-
-    };
-
-
-    window.addEventListener(
-      "scroll",
-      handleScroll,
-      {
-        passive: true,
-      },
-    );
-
-
-    return () => {
-
-      window.removeEventListener(
-        "scroll",
-        handleScroll,
-      );
-
-    };
-
-  }, []);
-
-
-  /* ==========================================================
-     BEE SCROLL POSITION
-  ========================================================== */
-
-  useEffect(() => {
-
-    const updateBee = () => {
-
-      const timeline =
-        timelineRef.current;
-
-      const path =
-        pathRef.current;
-
-
-      if (
-        !timeline ||
-        !path
-      ) {
-
-        animationFrameRef.current =
-          requestAnimationFrame(
-            updateBee,
-          );
-
-        return;
-
-      }
-
-
-      /* ------------------------------------------------------
-         TIMELINE POSITION
-      ------------------------------------------------------ */
-
-      const rect =
-        timeline.getBoundingClientRect();
-
-
-      const sectionTop =
-        rect.top +
-        window.scrollY;
-
-
-      const sectionHeight =
-        rect.height;
-
-
-      /* ------------------------------------------------------
-         VIEWPORT POSITION
-      ------------------------------------------------------ */
-
-      const viewportFocus =
-        window.scrollY +
-        window.innerHeight *
-          0.42;
-
-
-      const start =
-        sectionTop -
-        window.innerHeight *
-          0.05;
-
-
-      const end =
-        sectionTop +
-        sectionHeight -
-        window.innerHeight *
-          0.35;
-
-
-      const distance =
-        end - start;
-
-
-      let progress = 0;
-
-
-      if (distance > 0) {
-
-        progress =
-          (viewportFocus - start) /
-          distance;
-
-      }
-
-
-      progress =
-        Math.max(
-          0,
-          Math.min(
-            1,
-            progress,
-          ),
-        );
-
-
-      /* ------------------------------------------------------
-         BEE DIRECTION
-      ------------------------------------------------------ */
-
-      const direction =
-        lastDirection.current;
-
-
-      setBeeDirection(
-        direction === "down"
-          ? "right"
-          : "left",
-      );
-
-
-      /* ------------------------------------------------------
-         SMALL UPDATE THRESHOLD
-      ------------------------------------------------------ */
-
-      if (
-        Math.abs(
-          progress -
-            lastProgress.current,
-        ) < 0.0003
-      ) {
-
-        animationFrameRef.current =
-          requestAnimationFrame(
-            updateBee,
-          );
-
-        return;
-
-      }
-
-
-      lastProgress.current =
-        progress;
-
-
-      /* ------------------------------------------------------
-         PATH POSITION
-      ------------------------------------------------------ */
-
-      const totalLength =
-        path.getTotalLength();
-
-
-      const point =
-        path.getPointAtLength(
-          totalLength *
-            progress,
-        );
-
-
-      setBeePosition({
-        x: point.x,
-        y: point.y,
-      });
-
-
-      animationFrameRef.current =
-        requestAnimationFrame(
-          updateBee,
-        );
-
-    };
-
-
-    animationFrameRef.current =
-      requestAnimationFrame(
-        updateBee,
-      );
-
-
-    return () => {
-
-      if (
-        animationFrameRef.current !==
-        null
-      ) {
-
-        cancelAnimationFrame(
-          animationFrameRef.current,
-        );
-
-      }
-
-    };
-
-  }, []);
-
-
-  /* ==========================================================
-     RENDER
-  ========================================================== */
 
   return (
 
@@ -380,95 +77,36 @@ export default function AboutPage() {
           overflow-hidden
           scroll-mt-24
           px-6
-          pb-12
+          pb-14
           pt-28
-          md:pb-14
+          md:pb-16
           md:pt-32
         "
       >
 
-        {/* Background glow */}
-
         <div
           className="
             pointer-events-none
             absolute
-            -left-40
-            top-10
-            size-[360px]
+            left-1/2
+            top-0
+            size-[520px]
+            -translate-x-1/2
             rounded-full
-            bg-hive-yellow/15
-            blur-3xl
+            bg-hive-yellow/12
+            blur-[100px]
           "
         />
 
 
         <div
           className="
-            pointer-events-none
-            absolute
-            -right-40
-            top-20
-            size-[360px]
-            rounded-full
-            bg-mint/20
-            blur-3xl
-          "
-        />
-
-
-        {/* Decorative dots */}
-
-        <div
-          className="
-            pointer-events-none
-            absolute
-            left-[9%]
-            top-28
-            size-3
-            rounded-full
-            bg-hive-yellow
-          "
-        />
-
-
-        <div
-          className="
-            pointer-events-none
-            absolute
-            right-[13%]
-            top-44
-            size-2
-            rounded-full
-            bg-honey-orange/40
-          "
-        />
-
-
-        <div
-          className="
-            pointer-events-none
-            absolute
-            bottom-8
-            left-[18%]
-            size-2
-            rounded-full
-            bg-black/20
-          "
-        />
-
-
-        {/* Hero content */}
-
-        <div
-          className="
+            relative
             mx-auto
             max-w-4xl
             text-center
           "
         >
-
-          {/* Badge */}
 
           <motion.div
             initial={{
@@ -484,7 +122,7 @@ export default function AboutPage() {
             }}
             className="
               mx-auto
-              mb-5
+              mb-6
               inline-flex
               items-center
               gap-2
@@ -494,25 +132,23 @@ export default function AboutPage() {
               bg-white
               px-5
               py-2
-              text-sm
+              text-xs
               font-bold
+              uppercase
+              tracking-[0.18em]
               shadow-sm
             "
           >
 
             <Sparkles
-              size={16}
-              className="
-                text-honey-orange
-              "
+              size={14}
+              className="text-honey-orange"
             />
 
             The StickHive Story
 
           </motion.div>
 
-
-          {/* Heading */}
 
           <motion.h1
             initial={{
@@ -528,11 +164,13 @@ export default function AboutPage() {
               delay: 0.1,
             }}
             className="
-              font-display
-              text-5xl
-              font-extrabold
-              leading-[1]
+              font-serif
+              text-[2.75rem]
+              font-medium
+              italic
+              leading-[1.08]
               tracking-tight
+              text-foreground
               md:text-6xl
               lg:text-7xl
             "
@@ -543,6 +181,7 @@ export default function AboutPage() {
             <span
               className="
                 block
+                not-italic
                 text-honey-orange
               "
             >
@@ -553,8 +192,6 @@ export default function AboutPage() {
 
           </motion.h1>
 
-
-          {/* Description */}
 
           <motion.p
             initial={{
@@ -571,74 +208,20 @@ export default function AboutPage() {
             }}
             className="
               mx-auto
-              mt-6
-              max-w-2xl
+              mt-7
+              max-w-xl
               text-lg
               leading-relaxed
-              text-black/60
+              text-black/55
               md:text-xl
             "
           >
 
-            What started as a simple student
-            business idea became a journey
-            of creativity, experimentation
-            and trying to build something
-            of our own.
+            We didn't start with a factory, a big team
+            or a perfect plan. We started with a classroom,
+            a few ideas and the will to try.
 
           </motion.p>
-
-
-          {/* Small story statement */}
-
-          <motion.div
-            initial={{
-              opacity: 0,
-              y: 15,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            transition={{
-              duration: 0.6,
-              delay: 0.3,
-            }}
-            className="
-              mx-auto
-              mt-8
-              max-w-2xl
-              rounded-[1.5rem]
-              border
-              border-black/8
-              bg-white/70
-              px-6
-              py-5
-              text-left
-              shadow-sm
-              backdrop-blur-sm
-              md:px-8
-            "
-          >
-
-            <p
-              className="
-                text-base
-                leading-7
-                text-black/65
-                md:text-lg
-              "
-            >
-
-              We didn't start with a factory,
-              a big team or a perfect business
-              plan. We started with a classroom,
-              a few ideas and the excitement of
-              trying to create something of our own.
-
-            </p>
-
-          </motion.div>
 
         </div>
 
@@ -660,18 +243,15 @@ export default function AboutPage() {
         "
       >
 
-        {/* ====================================================
-            SECTION INTRO
-        ==================================================== */}
-
         <div
           className="
             relative
             z-10
             mx-auto
-            mb-8
+            mb-14
             max-w-3xl
             text-center
+            md:mb-20
           "
         >
 
@@ -692,359 +272,40 @@ export default function AboutPage() {
 
           <h2
             className="
-              mt-2
+              mt-3
+              font-serif
               text-4xl
-              font-extrabold
+              font-medium
+              italic
               tracking-tight
+              text-foreground
               md:text-5xl
             "
           >
 
             One idea.
-
-            <span className="text-honey-orange">
-              {" "}Many steps.
-            </span>
+            <span className="text-honey-orange"> Many steps.</span>
 
           </h2>
-
-
-          <p
-            className="
-              mx-auto
-              mt-4
-              max-w-xl
-              text-base
-              leading-7
-              text-black/55
-              md:text-lg
-            "
-          >
-
-            We are still students, still learning
-            and still figuring things out. But
-            every step has made the idea feel
-            a little more real.
-
-          </p>
 
         </div>
 
 
         {/* ====================================================
-            BACKGROUND DECORATION
+            TIMELINE — ambient buzzing bees wander the
+            background, story cards sit above them
         ==================================================== */}
 
         <div
-          className="
-            pointer-events-none
-            absolute
-            -left-32
-            top-[15%]
-            size-[340px]
-            rounded-full
-            bg-hive-yellow/10
-            blur-3xl
-          "
-        />
-
-
-        <div
-          className="
-            pointer-events-none
-            absolute
-            -right-32
-            top-[55%]
-            size-[340px]
-            rounded-full
-            bg-mint/15
-            blur-3xl
-          "
-        />
-
-
-        {/* Subtle circles */}
-
-        <div
-          className="
-            pointer-events-none
-            absolute
-            left-[4%]
-            top-[30%]
-            size-20
-            rounded-full
-            border
-            border-black/[0.04]
-          "
-        />
-
-
-        <div
-          className="
-            pointer-events-none
-            absolute
-            right-[5%]
-            top-[67%]
-            size-24
-            rounded-full
-            border
-            border-black/[0.04]
-          "
-        />
-
-
-        {/* ====================================================
-            TIMELINE
-        ==================================================== */}
-
-        <div
-          ref={timelineRef}
           className="
             relative
             mx-auto
-            min-h-[1180px]
             max-w-7xl
-            md:min-h-[1260px]
           "
         >
 
+          <BuzzingBees />
 
-          {/* ==================================================
-              BEE PATH
-          ================================================== */}
-
-          <div
-            className="
-              pointer-events-none
-              absolute
-              inset-0
-              hidden
-              lg:block
-            "
-          >
-
-            <svg
-              viewBox="0 0 1200 1260"
-              preserveAspectRatio="none"
-              className="
-                absolute
-                inset-0
-                h-full
-                w-full
-                overflow-visible
-              "
-              aria-hidden="true"
-            >
-
-              {/* ==============================================
-                  SIMPLE BUZZING PATH
-              ============================================== */}
-
-              <path
-                ref={pathRef}
-                d="
-                  M 90 70
-
-                  C 230 20,
-                    410 20,
-                    520 100
-
-                  C 630 180,
-                    560 280,
-                    400 270
-
-                  C 270 260,
-                    220 170,
-                    310 110
-
-                  C 410 45,
-                    590 95,
-                    700 190
-
-                  C 820 295,
-                    980 290,
-                    1070 205
-
-                  C 1130 150,
-                    1080 90,
-                    990 110
-
-                  C 900 130,
-                    900 230,
-                    970 290
-
-                  C 1040 350,
-                    980 430,
-                    870 455
-
-                  C 730 485,
-                    600 430,
-                    500 355
-
-                  C 390 275,
-                    270 325,
-                    280 435
-
-                  C 290 535,
-                    420 575,
-                    540 525
-
-                  C 660 475,
-                    770 415,
-                    890 485
-
-                  C 1000 550,
-                    1020 640,
-                    935 700
-
-                  C 835 770,
-                    700 710,
-                    595 645
-
-                  C 480 575,
-                    355 625,
-                    365 730
-
-                  C 375 825,
-                    510 865,
-                    625 810
-
-                  C 740 755,
-                    845 700,
-                    945 765
-
-                  C 1040 830,
-                    1030 915,
-                    940 970
-
-                  C 835 1035,
-                    705 975,
-                    605 915
-
-                  C 500 850,
-                    390 900,
-                    405 1000
-
-                  C 420 1100,
-                    550 1140,
-                    665 1075
-
-                  C 780 1010,
-                    885 985,
-                    985 1045
-
-                  C 1060 1090,
-                    1035 1160,
-                    945 1195
-                "
-                fill="none"
-                stroke="rgba(17,17,17,0.17)"
-                strokeWidth="3"
-                strokeDasharray="7 15"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-
-
-              {/* ==============================================
-                  BEE
-              ============================================== */}
-
-              <g
-                transform={`
-                  translate(
-                    ${beePosition.x}
-                    ${beePosition.y}
-                  )
-                  scale(
-                    ${beeDirection === "right"
-                      ? 1
-                      : -1}
-                    1
-                  )
-                `}
-              >
-
-                <motion.g
-                  animate={{
-                    y: [
-                      -2,
-                      2,
-                      -2,
-                    ],
-                  }}
-                  transition={{
-                    duration: 0.9,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                >
-
-                  <text
-                    x="0"
-                    y="0"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize="22"
-                  >
-
-                    🐝
-
-                  </text>
-
-                </motion.g>
-
-              </g>
-
-            </svg>
-
-          </div>
-
-
-          {/* ==================================================
-              MOBILE BEE
-          ================================================== */}
-
-          <div
-            className="
-              pointer-events-none
-              absolute
-              left-1/2
-              top-0
-              z-20
-              -translate-x-1/2
-              lg:hidden
-            "
-          >
-
-            <motion.div
-              animate={{
-                y: [
-                  -3,
-                  3,
-                  -3,
-                ],
-              }}
-              transition={{
-                duration: 1,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-              className="
-                text-2xl
-              "
-            >
-
-              🐝
-
-            </motion.div>
-
-          </div>
-
-
-          {/* ==================================================
-              STORY CARDS
-          ================================================== */}
 
           <div
             className="
@@ -1052,8 +313,8 @@ export default function AboutPage() {
               z-10
               flex
               flex-col
-              gap-12
-              md:gap-16
+              gap-14
+              md:gap-20
             "
           >
 
@@ -1101,210 +362,72 @@ export default function AboutPage() {
                       "
                     >
 
-                      {/* ====================================
-                          PHOTO HOLDER
-                      ==================================== */}
-
                       <div
-                        className="
+                        className={`
                           group
                           relative
-                          mb-5
-                          aspect-[16/9]
+                          mb-6
+                          aspect-[16/10]
                           overflow-hidden
                           rounded-[1.75rem]
-                          border
-                          border-black/10
-                          bg-white
-                          shadow-[0_25px_55px_-35px_rgba(0,0,0,0.35)]
+                          ${item.tone}
+                          shadow-[0_25px_55px_-35px_rgba(0,0,0,0.3)]
                           transition-transform
                           duration-500
                           hover:-translate-y-1
-                        "
+                        `}
                       >
 
-                        {/* Background */}
-
                         <div
-                          className={`
+                          className="
                             absolute
                             inset-0
-                            ${
-                              index === 0
-                                ? "bg-hive-yellow/25"
-                                : index === 1
-                                  ? "bg-mint/25"
-                                  : index === 2
-                                    ? "bg-honey-orange/10"
-                                    : "bg-white"
-                            }
-                          `}
-                        />
-
-
-                        {/* Decorative circle */}
-
-                        <div
-                          className="
-                            absolute
-                            -right-12
-                            -top-12
-                            size-36
-                            rounded-full
-                            bg-hive-yellow/20
-                            transition-transform
-                            duration-700
-                            group-hover:scale-110
-                          "
-                        />
-
-
-                        <div
-                          className="
-                            absolute
-                            -bottom-14
-                            -left-14
-                            size-40
-                            rounded-full
-                            bg-mint/20
-                          "
-                        />
-
-
-                        {/* Photo frame */}
-
-                        <div
-                          className="
-                            absolute
-                            inset-5
-                            overflow-hidden
-                            rounded-[1.25rem]
-                            border-2
-                            border-dashed
-                            border-black/10
-                            bg-white/45
+                            flex
+                            items-center
+                            justify-center
                           "
                         >
 
-                          <div
+                          <span
                             className="
-                              absolute
-                              inset-0
-                              flex
-                              flex-col
-                              items-center
-                              justify-center
-                              gap-3
-                              text-center
+                              font-serif
+                              text-[7rem]
+                              font-medium
+                              italic
+                              leading-none
+                              text-black/[0.08]
                             "
                           >
 
-                            <div
-                              className="
-                                flex
-                                size-14
-                                items-center
-                                justify-center
-                                rounded-2xl
-                                bg-white
-                                shadow-md
-                              "
-                            >
+                            {item.number}
 
-                              <Camera
-                                size={23}
-                                className="
-                                  text-black/60
-                                "
-                              />
-
-                            </div>
-
-
-                            <p
-                              className="
-                                text-sm
-                                font-bold
-                                text-black/55
-                                md:text-base
-                              "
-                            >
-
-                              Our journey —
-                              moment {item.number}
-
-                            </p>
-
-
-                            <span
-                              className="
-                                rounded-full
-                                bg-white/70
-                                px-3
-                                py-1
-                                text-[11px]
-                                font-semibold
-                                text-black/40
-                              "
-                            >
-
-                              Photo coming soon
-
-                            </span>
-
-                          </div>
+                          </span>
 
                         </div>
 
-
-                        {/* Chapter marker */}
 
                         <div
                           className="
                             absolute
                             left-7
-                            top-7
-                            rounded-full
-                            bg-black
-                            px-3
-                            py-1
-                            text-[10px]
+                            top-6
+                            text-xs
                             font-black
                             uppercase
-                            tracking-[0.15em]
-                            text-white
+                            tracking-[0.2em]
+                            text-black/35
                           "
                         >
 
-                          {item.number}
+                          Chapter {item.number}
 
                         </div>
 
                       </div>
 
 
-                      {/* ====================================
-                          TEXT
-                      ==================================== */}
-
-                      <span
-                        className="
-                          text-xs
-                          font-black
-                          uppercase
-                          tracking-[0.22em]
-                          text-honey-orange
-                        "
-                      >
-
-                        Chapter {item.number}
-
-                      </span>
-
-
                       <h3
                         className="
-                          mt-2
                           text-3xl
                           font-extrabold
                           leading-tight
@@ -1383,10 +506,6 @@ export default function AboutPage() {
           "
         >
 
-          {/* ==================================================
-              BACKGROUND DECORATION
-          ================================================== */}
-
           <div
             className="
               pointer-events-none
@@ -1403,50 +522,6 @@ export default function AboutPage() {
 
           <div
             className="
-              pointer-events-none
-              absolute
-              -bottom-24
-              -left-20
-              size-64
-              rounded-full
-              bg-mint/10
-              blur-3xl
-            "
-          />
-
-
-          <div
-            className="
-              pointer-events-none
-              absolute
-              right-[20%]
-              top-[22%]
-              size-3
-              rounded-full
-              bg-hive-yellow
-            "
-          />
-
-
-          <div
-            className="
-              pointer-events-none
-              absolute
-              bottom-[22%]
-              left-[18%]
-              size-2
-              rounded-full
-              bg-white/20
-            "
-          />
-
-
-          {/* ==================================================
-              CONTENT
-          ================================================== */}
-
-          <div
-            className="
               relative
               grid
               gap-10
@@ -1454,8 +529,6 @@ export default function AboutPage() {
               lg:items-center
             "
           >
-
-            {/* Left */}
 
             <motion.div
               initial={{
@@ -1474,8 +547,6 @@ export default function AboutPage() {
                 duration: 0.6,
               }}
             >
-
-              {/* Bee */}
 
               <div
                 className="
@@ -1514,8 +585,10 @@ export default function AboutPage() {
               <h2
                 className="
                   mt-3
+                  font-serif
                   text-4xl
-                  font-extrabold
+                  font-medium
+                  italic
                   leading-tight
                   tracking-tight
                   md:text-5xl
@@ -1537,8 +610,6 @@ export default function AboutPage() {
 
             </motion.div>
 
-
-            {/* Right */}
 
             <motion.div
               initial={{
@@ -1583,8 +654,9 @@ export default function AboutPage() {
                 className="
                   mt-5
                   text-lg
+                  font-semibold
                   leading-8
-                  text-white/75
+                  text-white
                   md:text-xl
                 "
               >
@@ -1595,27 +667,6 @@ export default function AboutPage() {
 
               </p>
 
-
-              <p
-                className="
-                  mt-5
-                  text-lg
-                  font-semibold
-                  leading-8
-                  text-white
-                  md:text-xl
-                "
-              >
-
-                And because we're students building
-                this ourselves, we're learning,
-                experimenting and improving along
-                the way.
-
-              </p>
-
-
-              {/* Small points */}
 
               <div
                 className="
@@ -1786,8 +837,6 @@ export default function AboutPage() {
           "
         >
 
-          {/* Decoration */}
-
           <div
             className="
               pointer-events-none
@@ -1800,21 +849,6 @@ export default function AboutPage() {
             "
           />
 
-
-          <div
-            className="
-              pointer-events-none
-              absolute
-              -bottom-16
-              -left-16
-              size-40
-              rounded-full
-              bg-mint/10
-            "
-          />
-
-
-          {/* Bee */}
 
           <div
             className="
@@ -1836,14 +870,13 @@ export default function AboutPage() {
           </div>
 
 
-          {/* Heading */}
-
           <h2
             className="
               relative
-              font-display
+              font-serif
               text-3xl
-              font-extrabold
+              font-medium
+              italic
               leading-tight
               md:text-4xl
             "
@@ -1857,14 +890,12 @@ export default function AboutPage() {
 
             <br />
 
-            <span className="text-hive-yellow">
+            <span className="not-italic text-hive-yellow">
               And we're just getting started.
             </span>
 
           </h2>
 
-
-          {/* Description */}
 
           <p
             className="
@@ -1887,8 +918,6 @@ export default function AboutPage() {
 
           </p>
 
-
-          {/* Bottom hint */}
 
           <div
             className="
