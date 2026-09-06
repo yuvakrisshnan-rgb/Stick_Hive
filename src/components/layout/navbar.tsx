@@ -2,6 +2,7 @@
 
 
 import {
+  useEffect,
   useState,
 } from "react";
 
@@ -16,6 +17,7 @@ import {
 
 
 import {
+  Home,
   Menu,
   ShoppingBag,
   UserRound,
@@ -64,9 +66,11 @@ export default function Navbar() {
   // ----------------------------------------
 
 
-  const mounted =
+  const [mounted, setMounted] = useState(false);
 
-  typeof window !== "undefined";
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
 
   const {
@@ -86,41 +90,10 @@ export default function Navbar() {
 
 
   const links = [
-
-
-    {
-
-      name:"Shop",
-
-      href:"/shop",
-
-    },
-
-
-
-
-    {
-
-      name:"Custom Stickers",
-
-      href:"/custom-sticker",
-
-    },
-
-
-
-
-    {
-
-      name:"About",
-
-      href:"/about",
-
-    },
-
-
+    { name: "About", href: "/about" },
+    { name: "Shop", href: "/shop" },
+    { name: "Custom Stickers", href: "/custom-sticker" },
   ];
-
 
   return (
 
@@ -191,22 +164,10 @@ export default function Navbar() {
 
 
             <div
-
-              className="
-                flex
-                size-9
-                items-center
-                justify-center
-                rounded-full
-                bg-hive-yellow
-                text-lg
-              "
-
+              className="flex size-9 items-center justify-center rounded-full bg-hive-yellow text-foreground"
+              aria-hidden="true"
             >
-
-              🐝
-
-
+              <Home size={17} strokeWidth={2.5} />
             </div>
 
 
@@ -249,17 +210,15 @@ export default function Navbar() {
 
 
         <div
-
-          className="
-            hidden
-            items-center
-            gap-2
-            md:flex
-          "
-
+          className="hidden items-center gap-1 md:flex"
         >
-
-
+          <Link
+            href="/"
+            aria-label="Home"
+            className="flex size-10 items-center justify-center rounded-full text-black/70 transition hover:bg-hive-yellow hover:text-black"
+          >
+            <Home size={18} />
+          </Link>
 
           {links.map((link)=>(
 

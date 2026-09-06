@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import {
   ArrowUpRight,
+  Hexagon,
   Mail,
 } from "lucide-react";
 
@@ -235,7 +236,7 @@ export default function Footer() {
                 shadow-sm
               "
             >
-              🐝
+              <Hexagon size={25} strokeWidth={2.2} />
             </div>
 
 
