@@ -85,6 +85,21 @@ function HiveGraphic() {
 }
 
 /**
+ * Single source of truth for the "Where we came from" diagram: the SVG
+ * circles and their HTML labels both read from this array, in the same
+ * 0–560 coordinate space as the viewBox, so they can never drift apart
+ * or overlap the way two independently-hand-positioned layers can.
+ * "align" controls which side of the anchor point the label text grows
+ * from, so a long label near an edge never gets clipped or collides
+ * with its neighbor.
+ */
+const ORIGIN_STOPS = [
+  { cx: 70, cy: 420, fill: "#ffd43b", label: "Classroom", align: "left" as const, side: "below" as const },
+  { cx: 250, cy: 185, fill: "#b8f2d0", label: "Experiment", align: "center" as const, side: "above" as const },
+  { cx: 490, cy: 115, fill: "#ff8a00", label: "StickHive", align: "right" as const, side: "above" as const },
+];
+
+/**
  * OriginPath
  * The "Where we came from" diagram. The connecting line draws itself
  * on and the three stops fade in with a small stagger the first time
@@ -95,12 +110,7 @@ function HiveGraphic() {
  */
 function OriginPath() {
   const shouldReduceMotion = useReducedMotion();
-
-  const stops = [
-    { cx: 70, cy: 420, fill: "#ffd43b" },
-    { cx: 250, cy: 185, fill: "#b8f2d0" },
-    { cx: 490, cy: 115, fill: "#ff8a00" },
-  ];
+  const stops = ORIGIN_STOPS;
 
   if (shouldReduceMotion) {
     return (
@@ -322,15 +332,26 @@ export default function AboutPage() {
         <div className="mx-auto grid max-w-[1400px] items-center gap-16 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
           <div className="relative min-w-0 aspect-square w-full max-w-[560px]">
             <OriginPath />
-            <Reveal delay={0.75} y={6} className="absolute left-[7%] top-[68%] text-xs font-bold uppercase tracking-[0.18em] text-black/45">
-              Classroom
-            </Reveal>
-            <Reveal delay={0.9} y={6} className="absolute left-[39%] top-[29%] text-xs font-bold uppercase tracking-[0.18em] text-black/45">
-              Experiment
-            </Reveal>
-            <Reveal delay={1.05} y={6} className="absolute right-0 top-[12%] text-xs font-bold uppercase tracking-[0.18em] text-black/45">
-              StickHive
-            </Reveal>
+            {ORIGIN_STOPS.map((stop, i) => {
+              const left = `${(stop.cx / 560) * 100}%`;
+              const top = `${(stop.cy / 560) * 100}%`;
+              const translateX = stop.align === "left" ? "0%" : stop.align === "right" ? "-100%" : "-50%";
+              const translateY = stop.side === "below" ? "34px" : "calc(-100% - 34px)";
+
+              return (
+                <div
+                  key={stop.label}
+                  className="absolute"
+                  style={{ left, top, transform: `translate(${translateX}, ${translateY})` }}
+                >
+                  <Reveal delay={0.75 + i * 0.15} y={6}>
+                    <span className="whitespace-nowrap text-xs font-bold uppercase tracking-[0.18em] text-black/45">
+                      {stop.label}
+                    </span>
+                  </Reveal>
+                </div>
+              );
+            })}
           </div>
 
           <Reveal className="min-w-0">
