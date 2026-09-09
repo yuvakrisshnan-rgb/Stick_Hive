@@ -35,6 +35,8 @@ import Navbar from "@/components/layout/navbar"
 import Footer from "@/components/layout/footer"
 
 import CartDrawer from "@/components/cart/cart-drawer"
+import { AuthProvider } from "@/components/auth/auth-provider"
+import AuthDialogHost from "@/components/auth/auth-dialog-host"
 
 
 // ============================================================================
@@ -44,13 +46,21 @@ import CartDrawer from "@/components/cart/cart-drawer"
 export const metadata: Metadata = {
 
   title:
-    "StickHive — Make Ideas Stick",
+    "Stick Hive — Make Ideas Stick",
 
   description:
-    "StickHive is a creative sticker universe where ideas become stickers and creativity becomes physical. Premium stickers for brands and individuals.",
+    "Stick Hive is a creative sticker universe where ideas become stickers and creativity becomes physical. Premium stickers for brands and individuals.",
 
   generator:
     "v0.app",
+
+  icons: {
+    icon: [
+      { url: "/brand/stickhive-icon.png", sizes: "1024x1024", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: "/brand/stickhive-icon.png",
+  },
 
 }
 
@@ -95,7 +105,9 @@ export default function RootLayout({
             SHOP PROVIDER
         ================================================================= */}
 
-        <ShopProvider>
+        <AuthProvider>
+
+          <ShopProvider>
 
           {/* ==============================================================
               WISHLIST PROVIDER
@@ -147,7 +159,11 @@ export default function RootLayout({
 
           </WishlistProvider>
 
-        </ShopProvider>
+          </ShopProvider>
+
+          <AuthDialogHost />
+
+        </AuthProvider>
 
       </body>
 

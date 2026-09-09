@@ -5,6 +5,8 @@ import {
   useState,
 } from "react";
 
+import QRCode from "qrcode";
+
 import Link from "next/link";
 
 import {
@@ -19,6 +21,8 @@ import {
   MapPin,
   Phone,
   Mail,
+  Upload,
+  RefreshCw,
 } from "lucide-react";
 
 import {
@@ -49,6 +53,7 @@ type CustomerData = {
 
 
 type OrderStatus =
+  | "awaiting_payment"
   | "placed"
   | "processing"
   | "packed"
@@ -89,6 +94,35 @@ type StoredOrder = {
   customer: CustomerData;
 
   paymentMethod: string;
+
+  paymentStatus?:
+    | "pending"
+    | "pending_confirmation"
+    | "paid"
+    | "failed"
+    | "cancelled"
+    | "refunded";
+
+  paymentClaimedAt?: string;
+
+  paymentAttempt?: number;
+
+  paymentExpiresAt?: string;
+
+  paymentProof?: {
+    objectKey: string;
+    contentType: string;
+    fileName: string;
+    uploadedAt: string;
+  };
+
+  upiPayment?: {
+    upiId: string;
+    payeeName: string;
+    amount: number;
+    transactionReference: string;
+    uri: string;
+  };
 
   items: OrderItem[];
 
@@ -164,7 +198,7 @@ function getStoredOrder(
   } catch (error) {
 
     console.error(
-      "Unable to load StickHive order:",
+      "Unable to load Stick Hive order:",
       error,
     );
 
@@ -211,8 +245,11 @@ function getStatusLabel(
 
   switch (status) {
 
+    case "awaiting_payment":
+      return "Payment Pending";
+
     case "placed":
-      return "Order Placed";
+      return "Order Confirmed";
 
     case "processing":
       return "Processing";
@@ -225,6 +262,9 @@ function getStatusLabel(
 
     case "delivered":
       return "Delivered";
+
+    case "cancelled":
+      return "Cancelled";
 
     default:
       return "Order Placed";
@@ -289,29 +329,116 @@ export default function OrderSuccessPage() {
   ] = useState(false);
 
 
+  const [
+    qrDataUrl,
+    setQrDataUrl,
+  ] = useState("");
+
+  const [
+    isClaimingPayment,
+    setIsClaimingPayment,
+  ] = useState(false);
+
+  const [
+    paymentMessage,
+    setPaymentMessage,
+  ] = useState("");
+
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [isRetryingPayment, setIsRetryingPayment] = useState(false);
+  const [paymentCountdown, setPaymentCountdown] = useState("");
+
+
   // ==========================================================================
   // LOAD ORDER
   // ==========================================================================
 
+
   useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setInterval> | undefined;
 
-    const storedOrder =
-      getStoredOrder(
-        orderId,
-      );
+    async function loadOrder() {
+      if (!orderId) {
+        if (active) {
+          setOrder(null);
+          setHasLoaded(true);
+        }
+        return;
+      }
 
-    setOrder(
-      storedOrder,
-    );
+      try {
+        const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { cache: "no-store" });
+        const data = await response.json();
+        if (response.ok && data?.success && data.order) {
+          const nextOrder = data.order as StoredOrder;
+          if (active) {
+            setOrder(nextOrder);
+            if (nextOrder.paymentStatus === "paid" && timer) {
+              clearInterval(timer);
+              timer = undefined;
+            }
+          }
 
-    setHasLoaded(
-      true,
-    );
+          if (nextOrder.upiPayment?.uri) {
+            try {
+              const dataUrl = await QRCode.toDataURL(nextOrder.upiPayment.uri, {
+                width: 360,
+                margin: 2,
+                errorCorrectionLevel: "M",
+              });
+              if (active) setQrDataUrl(dataUrl);
+            } catch (qrError) {
+              console.error("Unable to generate UPI QR:", qrError);
+            }
+          }
 
-  }, [
-    orderId,
-  ]);
+          if (active) setHasLoaded(true);
+          if (active && nextOrder.paymentStatus === "pending_confirmation" && !timer) {
+            timer = setInterval(() => { void loadOrder(); }, 5000);
+          }
+          return;
+        }
+      } catch (error) {
+        console.error("Unable to load order from server:", error);
+      }
 
+      // Compatibility fallback for an order created by the previous localStorage-only checkout.
+      const storedOrder = getStoredOrder(orderId);
+      if (active) {
+        setOrder(storedOrder);
+        setHasLoaded(true);
+      }
+    }
+
+    void loadOrder();
+    return () => {
+      active = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [orderId]);
+
+
+  useEffect(() => {
+    const expiresAt = order?.paymentExpiresAt;
+    if (!expiresAt || order?.paymentStatus === "paid" || order?.paymentStatus === "cancelled") {
+      setPaymentCountdown("");
+      return;
+    }
+    const update = () => {
+      const ms = new Date(expiresAt).getTime() - Date.now();
+      if (ms <= 0) {
+        setPaymentCountdown("Payment window expired");
+        return;
+      }
+      const seconds = Math.floor(ms / 1000);
+      setPaymentCountdown(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} remaining`);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [order?.paymentExpiresAt, order?.paymentStatus]);
 
   // ==========================================================================
   // LOADING STATE
@@ -500,6 +627,74 @@ export default function OrderSuccessPage() {
     order;
 
 
+  async function handleUploadProof() {
+    if (!proofFile) {
+      setPaymentMessage("Choose your payment screenshot first.");
+      return;
+    }
+    setPaymentMessage("");
+    setIsUploadingProof(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", proofFile);
+      const response = await fetch(`/api/orders/${encodeURIComponent(currentOrder.orderId)}/payment-proof`, { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok || !data?.success) throw new Error(data?.error ?? "Unable to upload payment proof.");
+      setOrder((previous) => previous ? { ...previous, paymentProof: data.proof } : previous);
+      setProofFile(null);
+      setPaymentMessage("Payment proof uploaded. Now click I’ve Paid.");
+    } catch (error) {
+      setPaymentMessage(error instanceof Error ? error.message : "Unable to upload payment proof.");
+    } finally {
+      setIsUploadingProof(false);
+    }
+  }
+
+  async function handleRetryPayment() {
+    setPaymentMessage("");
+    setIsRetryingPayment(true);
+    try {
+      const response = await fetch(`/api/orders/${encodeURIComponent(currentOrder.orderId)}/payment-retry`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok || !data?.success) throw new Error(data?.error ?? "Unable to restart payment.");
+      setOrder(data.order as StoredOrder);
+      setQrDataUrl("");
+      setPaymentMessage("A fresh 20-minute payment window is ready. Pay again using the new QR, then upload your proof.");
+    } catch (error) {
+      setPaymentMessage(error instanceof Error ? error.message : "Unable to restart payment.");
+    } finally {
+      setIsRetryingPayment(false);
+    }
+  }
+
+  // ==========================================================================
+  // CLAIM UPI PAYMENT
+  // ==========================================================================
+
+  async function handleClaimUpiPayment() {
+    setPaymentMessage("");
+    setIsClaimingPayment(true);
+
+    try {
+      const response = await fetch(
+        `/api/orders/${encodeURIComponent(currentOrder.orderId)}/payment-claim`,
+        { method: "POST" },
+      );
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error ?? "Unable to record your payment confirmation.");
+      }
+
+      setOrder(data.order as StoredOrder);
+      setPaymentMessage("Payment submitted. We'll confirm your order after we verify the payment.");
+    } catch (error) {
+      setPaymentMessage(error instanceof Error ? error.message : "Unable to record your payment confirmation.");
+    } finally {
+      setIsClaimingPayment(false);
+    }
+  }
+
+
   // ==========================================================================
   // DOWNLOAD INVOICE
   // ==========================================================================
@@ -638,7 +833,7 @@ export default function OrderSuccessPage() {
               md:text-5xl
             "
           >
-            Order Confirmed!
+            {currentOrder.paymentStatus === "paid" ? "Order Confirmed!" : "Order Received"}
           </h1>
 
 
@@ -650,10 +845,11 @@ export default function OrderSuccessPage() {
               text-black/50
             "
           >
-            Thank you for shopping
-            with StickHive. Your
-            stickers are now being
-            prepared.
+            {currentOrder.paymentStatus === "pending_confirmation"
+              ? "Your payment is awaiting verification. We&apos;ll update the order once it is confirmed."
+              : currentOrder.paymentStatus === "paid"
+                ? "Thank you for shopping with Stick Hive. Your stickers are now being prepared."
+                : "Your order is created. Complete the UPI payment below to finish checkout."}
           </p>
 
 
@@ -708,6 +904,129 @@ export default function OrderSuccessPage() {
           </div>
 
         </section>
+
+
+        {/* ================================================================== */}
+        {/* UPI PAYMENT                                                        */}
+        {/* ================================================================== */}
+
+        {currentOrder.paymentMethod === "upi" && currentOrder.paymentStatus === "cancelled" && (
+          <section className="mt-6 rounded-[2rem] bg-white p-6 shadow-xl md:p-8">
+            <div className="rounded-3xl bg-black/[0.03] p-6">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-black/40">Payment window expired</p>
+              <h2 className="mt-2 text-2xl font-extrabold">Need to pay again?</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-black/50">This order was kept as a record, but its payment window has closed. Start a new payment window instead of creating a duplicate order.</p>
+              <button type="button" onClick={() => void handleRetryPayment()} disabled={isRetryingPayment} className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-black px-5 py-3 font-bold text-white disabled:opacity-50">
+                {isRetryingPayment ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                {isRetryingPayment ? "Starting…" : "Pay Again"}
+              </button>
+            </div>
+            {paymentMessage && <p className="mt-3 text-sm font-semibold text-black/60">{paymentMessage}</p>}
+          </section>
+        )}
+
+        {currentOrder.paymentMethod === "upi" && currentOrder.paymentStatus !== "paid" && currentOrder.paymentStatus !== "cancelled" && currentOrder.upiPayment && (
+          <section
+            className="
+              mt-6
+              rounded-[2rem]
+              bg-white
+              p-6
+              shadow-xl
+              md:p-8
+            "
+          >
+            <div className="text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-black/40">
+                Complete Payment
+              </p>
+              <h2 className="mt-2 text-2xl font-extrabold md:text-3xl">
+                Pay ₹{currentOrder.upiPayment.amount.toFixed(2)} via UPI
+              </h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-black/50">
+                Scan the QR with any UPI app. The amount is already filled in.
+              </p>
+
+              {qrDataUrl ? (
+                <div className="mx-auto mt-6 flex w-fit items-center justify-center rounded-3xl border border-black/10 bg-white p-4 shadow-sm">
+                  <img
+                    src={qrDataUrl}
+                    alt={`UPI payment QR for ₹${currentOrder.upiPayment.amount.toFixed(2)}`}
+                    className="size-64 rounded-xl md:size-72"
+                  />
+                </div>
+              ) : (
+                <div className="mx-auto mt-6 flex size-72 items-center justify-center rounded-3xl bg-black/[0.03] text-sm text-black/40">
+                  Generating QR…
+                </div>
+              )}
+
+              {paymentCountdown && <div className="mx-auto mt-4 inline-flex rounded-full bg-black/[0.05] px-4 py-2 text-xs font-extrabold">{paymentCountdown}</div>}
+
+              <div className="mx-auto mt-5 max-w-md rounded-2xl bg-cream p-4 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-black/50">UPI ID</span>
+                  <span className="font-bold break-all">{currentOrder.upiPayment.upiId}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-4">
+                  <span className="text-black/50">Order reference</span>
+                  <span className="font-bold">{currentOrder.orderId}</span>
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-3xl border border-black/10 bg-black/[0.02] p-5 text-left">
+                <div className="flex items-start gap-3"><Upload size={20} className="mt-0.5 shrink-0" /><div><p className="font-extrabold">Payment proof</p><p className="mt-1 text-sm leading-6 text-black/50">Upload a screenshot of the successful UPI payment. PNG, JPEG or WebP up to 5 MB.</p></div></div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <input
+                    id="payment-proof-file"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
+                    disabled={isUploadingProof || currentOrder.paymentStatus === "paid"}
+                    className="sr-only"
+                  />
+                  <label
+                    htmlFor="payment-proof-file"
+                    className={`inline-flex cursor-pointer items-center justify-center rounded-full border border-black px-4 py-3 text-sm font-extrabold transition hover:bg-black hover:text-white ${(isUploadingProof || currentOrder.paymentStatus === "paid") ? "pointer-events-none opacity-40" : ""}`}
+                  >
+                    {proofFile ? "Change Screenshot" : "Choose Screenshot"}
+                  </label>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-black/60">
+                    {proofFile?.name ?? (currentOrder.paymentProof ? "A proof is already uploaded" : "No screenshot selected")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleUploadProof()}
+                    disabled={!proofFile || isUploadingProof || currentOrder.paymentStatus === "paid"}
+                    className="rounded-full border border-black px-4 py-3 text-sm font-extrabold transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isUploadingProof ? "Uploading…" : currentOrder.paymentProof ? "Replace Proof" : "Upload Proof"}
+                  </button>
+                </div>
+                {currentOrder.paymentProof && <p className="mt-3 text-xs font-bold text-black/50">Proof uploaded · {new Date(currentOrder.paymentProof.uploadedAt).toLocaleString("en-IN")}</p>}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleClaimUpiPayment}
+                disabled={isClaimingPayment || currentOrder.paymentStatus === "pending_confirmation" || !currentOrder.paymentProof}
+                className="mt-5 w-full rounded-full bg-black px-6 py-4 font-bold text-white transition hover:scale-[1.01] hover:bg-honey-orange disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 disabled:hover:bg-black"
+              >
+                {isClaimingPayment
+                  ? "Saving payment confirmation…"
+                  : currentOrder.paymentStatus === "pending_confirmation"
+                    ? "Payment confirmation submitted"
+                    : currentOrder.paymentProof
+                      ? "I've Paid — Submit for Verification"
+                      : "Upload Proof to Continue"}
+              </button>
+
+              {paymentMessage && (
+                <p className="mt-3 text-sm font-semibold text-black/60">{paymentMessage}</p>
+              )}
+            </div>
+          </section>
+        )}
 
 
         {/* ================================================================== */}
@@ -1255,9 +1574,10 @@ export default function OrderSuccessPage() {
               <span
                 className="
                   font-bold
+                  capitalize
                 "
               >
-                UPI
+                {currentOrder.paymentMethod === "stripe" ? "Stripe" : "UPI"}
               </span>
 
             </div>
@@ -1265,6 +1585,15 @@ export default function OrderSuccessPage() {
           </div>
 
         </section>
+
+        <div className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-black/50">Payment Status</span>
+            <span className="font-bold capitalize">
+              {(currentOrder.paymentStatus ?? "paid").replaceAll("_", " ")}
+            </span>
+          </div>
+        </div>
 
 
         {/* ================================================================== */}

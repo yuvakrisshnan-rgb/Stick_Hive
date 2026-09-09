@@ -225,7 +225,7 @@ export const PRODUCTS: Product[] = [
     ],
 
     image:
-      "/stickers/mini-anime-pack.png",
+      "/stickers/mini-anime-pack.svg",
 
     emoji: "🎴",
 
@@ -402,7 +402,7 @@ export const PRODUCTS: Product[] = [
     ],
 
     image:
-      "/stickers/level-up.png",
+      "/stickers/level-up.svg",
 
     emoji: "🎮",
 
@@ -518,7 +518,7 @@ export const PRODUCTS: Product[] = [
     ],
 
     image:
-      "/stickers/tiny-bot.png",
+      "/stickers/tiny-bot.svg",
 
     emoji: "🤖",
 

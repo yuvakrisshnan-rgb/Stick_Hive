@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <rect width="800" height="800" rx="180" fill="#CDB4DB"/>
+  <path d="M185 265 Q400 150 615 265 L570 545 Q400 650 230 545 Z" fill="#111"/>
+  <rect x="260" y="290" width="280" height="170" rx="38" fill="#BDE0FE" stroke="#111" stroke-width="18"/>
+  <circle cx="322" cy="375" r="22" fill="#111"/><circle cx="478" cy="375" r="22" fill="#111"/>
+  <path d="M335 430 Q400 470 465 430" fill="none" stroke="#111" stroke-width="18" stroke-linecap="round"/>
+  <path d="M235 230 L275 180 L315 230 M485 230 L525 180 L565 230" fill="#FFD43B" stroke="#111" stroke-width="14" stroke-linejoin="round"/>
+  <text x="400" y="610" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="74" fill="#FFF7F0">LEVEL UP</text>
+</svg>

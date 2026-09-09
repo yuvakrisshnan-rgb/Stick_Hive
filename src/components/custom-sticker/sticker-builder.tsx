@@ -25,6 +25,7 @@ import {
 } from "./sticker-canvas";
 
 import { detectImageContour } from "@/lib/custom-sticker/contour";
+import { removeSimpleBackground } from "@/lib/custom-sticker/background-removal";
 import { DEFAULT_STICKER_FONT } from "@/lib/custom-sticker/fonts";
 
 import {
@@ -295,6 +296,9 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   const [detectingContourLayerId, setDetectingContourLayerId] = useState<
     string | null
   >(null);
+  const [removingBackgroundLayerId, setRemovingBackgroundLayerId] = useState<
+    string | null
+  >(null);
 
   function triggerAddImage() {
     uploadModeRef.current = { type: "add" };
@@ -359,6 +363,8 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
                     width: displayWidth,
                     height: displayHeight,
                     contourPoints: null,
+                    originalSrc: undefined,
+                    backgroundRemoved: false,
                   }
                 : layer,
             ),
@@ -377,6 +383,8 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
           height: displayHeight,
           rotation: 0,
           contourPoints: null,
+          originalSrc: undefined,
+          backgroundRemoved: false,
         };
 
         applyLayers((previous) => [...previous, newLayer], true);
@@ -412,6 +420,88 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
         current === layerId ? null : current,
       );
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // DIE-CUT BACKGROUND REMOVAL
+  // --------------------------------------------------------------------------
+
+  async function handleRemoveBackground(layerId: string) {
+    const layer = layersRef.current.find(
+      (candidate): candidate is StickerImageLayer =>
+        candidate.id === layerId && candidate.type === "image",
+    );
+
+    if (!layer) return;
+
+    setUploadError("");
+    setRemovingBackgroundLayerId(layerId);
+
+    try {
+      const originalSrc = layer.originalSrc ?? layer.src;
+      const processedSrc = await removeSimpleBackground(originalSrc);
+      const contourPoints = await detectImageContour(processedSrc);
+
+      if (!contourPoints) {
+        throw new Error(
+          "The background could not be separated cleanly. Try a transparent PNG or a simpler background.",
+        );
+      }
+
+      applyLayers(
+        (previous) =>
+          previous.map((candidate) =>
+            candidate.id === layerId && candidate.type === "image"
+              ? {
+                  ...candidate,
+                  src: processedSrc,
+                  originalSrc,
+                  contourPoints,
+                  backgroundRemoved: true,
+                }
+              : candidate,
+          ),
+        true,
+      );
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to remove the background.",
+      );
+      console.error(error);
+    } finally {
+      setRemovingBackgroundLayerId((current) =>
+        current === layerId ? null : current,
+      );
+    }
+  }
+
+  function handleRestoreOriginal(layerId: string) {
+    const layer = layersRef.current.find(
+      (candidate): candidate is StickerImageLayer =>
+        candidate.id === layerId && candidate.type === "image",
+    );
+
+    if (!layer?.originalSrc) return;
+
+    applyLayers(
+      (previous) =>
+        previous.map((candidate) =>
+          candidate.id === layerId && candidate.type === "image"
+            ? {
+                ...candidate,
+                src: layer.originalSrc!,
+                originalSrc: undefined,
+                backgroundRemoved: false,
+                contourPoints: null,
+              }
+            : candidate,
+        ),
+      true,
+    );
+
+    detectContourForLayer(layerId, layer.originalSrc);
   }
 
   // --------------------------------------------------------------------------
@@ -542,30 +632,84 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   // ADD TO CART
   // --------------------------------------------------------------------------
 
+  async function uploadArtworkToStorage(dataUrl: string): Promise<{ objectKey: string; contentType: string }> {
+    const blob = await fetch(dataUrl).then((response) => response.blob());
+    const contentType = blob.type || "image/png";
+
+    const prepareResponse = await fetch("/api/storage/upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contentType,
+        size: blob.size,
+      }),
+    });
+
+    const prepareData = await prepareResponse.json().catch(() => ({}));
+    if (!prepareResponse.ok || !prepareData.success) {
+      throw new Error(prepareData.error ?? "Unable to prepare artwork upload.");
+    }
+
+    const putResponse = await fetch(prepareData.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: blob,
+    });
+
+    if (!putResponse.ok) {
+      throw new Error(`Artwork upload failed (${putResponse.status}).`);
+    }
+
+    return {
+      objectKey: prepareData.objectKey as string,
+      contentType,
+    };
+  }
+
   async function handleAddToCart() {
-    if (layers.length === 0) {
+    if (layers.length === 0 || isUploading) {
       return;
     }
 
-    const thumbnailUrl = await generateThumbnail();
+    setUploadError("");
+    setIsUploading(true);
 
-    const stickerData = {
-      layers,
-      size,
-      shape,
-      finish: "Matte" as CustomStickerFinish,
-      quantity,
-      unitPrice,
-      thumbnailUrl,
-    };
+    try {
+      const thumbnailUrl = await generateThumbnail();
+      if (!thumbnailUrl) {
+        throw new Error("Unable to generate the sticker artwork.");
+      }
 
-    if (editId) {
-      updateCustomStickerDesign(editId, stickerData);
-    } else {
-      addCustomStickerToCart(stickerData);
+      const artwork = await uploadArtworkToStorage(thumbnailUrl);
+
+      const stickerData = {
+        layers,
+        size,
+        shape,
+        finish: "Matte" as CustomStickerFinish,
+        quantity,
+        unitPrice,
+        thumbnailUrl,
+        artworkObjectKey: artwork.objectKey,
+        artworkContentType: artwork.contentType,
+      };
+
+      if (editId) {
+        updateCustomStickerDesign(editId, stickerData);
+      } else {
+        addCustomStickerToCart(stickerData);
+      }
+
+      setAdded(true);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to save the custom sticker artwork.",
+      );
+    } finally {
+      setIsUploading(false);
     }
-
-    setAdded(true);
   }
 
   // --------------------------------------------------------------------------
@@ -603,6 +747,15 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
           onCommitHistory={commitCurrentHistory}
           isDetectingContour={
             detectingContourLayerId === selectedLayer.id
+          }
+          isRemovingBackground={
+            removingBackgroundLayerId === selectedLayer.id
+          }
+          onRemoveBackground={() =>
+            handleRemoveBackground(selectedLayer.id)
+          }
+          onRestoreOriginal={() =>
+            handleRestoreOriginal(selectedLayer.id)
           }
         />
       )}

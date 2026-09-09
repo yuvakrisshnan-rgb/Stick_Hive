@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmailOtp } from "@/lib/email-otp";
-import { isLikelyValidEmail } from "@/lib/address-validation";
+import { ZodError, z } from "zod";
+import { requestEmailOtp } from "../../../../backend/auth/service";
+import { errorFromUnknown } from "../../../../backend/http/auth-response";
+
+export const runtime = "nodejs";
+const schema = z.object({ email: z.string().trim().email().max(254) });
 
 export async function POST(request: NextRequest) {
-  const { email } = await request.json();
-
-  if (!email || typeof email !== "string" || !isLikelyValidEmail(email)) {
-    return NextResponse.json(
-      { success: false, error: "Please enter a valid email address." },
-      { status: 400 },
-    );
+  try {
+    const body = schema.parse(await request.json());
+    return NextResponse.json(await requestEmailOtp(body.email));
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({ success: false, error: "Please enter a valid email address." }, { status: 400 });
+    }
+    return errorFromUnknown(error);
   }
-
-  const result = await sendEmailOtp(email);
-
-  if (!result.success) {
-    return NextResponse.json(result, { status: 500 });
-  }
-
-  return NextResponse.json(result);
 }

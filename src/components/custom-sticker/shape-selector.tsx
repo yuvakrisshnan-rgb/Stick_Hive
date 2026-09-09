@@ -286,6 +286,14 @@ font-bold
 
 </div>
 
+        {shape === "Die-cut" && (
+          <div className="mt-4 rounded-2xl bg-cream px-3 py-3 text-xs font-semibold leading-relaxed text-black/55">
+            Die-cut follows your artwork silhouette. Transparent PNGs work
+            immediately; JPGs and other opaque images can use
+            <span className="text-black"> Make Die-cut Ready</span> in Image Settings.
+          </div>
+        )}
+
 
 
 </section>

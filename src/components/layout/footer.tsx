@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 
 import {
   ArrowUpRight,
-  Hexagon,
   Mail,
 } from "lucide-react";
 
@@ -221,37 +221,15 @@ export default function Footer() {
             "
           >
 
-            {/* Bee */}
-
-            <div
-              className="
-                mb-5
-                flex
-                size-12
-                items-center
-                justify-center
-                rounded-full
-                bg-hive-yellow
-                text-2xl
-                shadow-sm
-              "
-            >
-              <Hexagon size={25} strokeWidth={2.2} />
+            <div className="mb-6">
+              <Image
+                src="/brand/stickhive-logo-horizontal-dark.png"
+                alt="Stick Hive — Ideas Find A Home"
+                width={220}
+                height={64}
+                className="h-auto w-[190px]"
+              />
             </div>
-
-
-            {/* Brand */}
-
-            <h2
-              className="
-                font-display
-                text-3xl
-                font-extrabold
-                tracking-tight
-              "
-            >
-              StickHive
-            </h2>
 
 
             {/* Heading */}
@@ -724,7 +702,7 @@ export default function Footer() {
               text-white/40
             "
           >
-            © {currentYear} StickHive.
+            © {currentYear} Stick Hive.
             All rights reserved.
           </p>
 

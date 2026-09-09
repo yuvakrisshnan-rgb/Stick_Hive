@@ -16,6 +16,7 @@ import {
   Line,
   Rect,
   Transformer,
+  Group,
 } from "react-konva";
 
 import type {
@@ -112,6 +113,72 @@ function offsetFromCentroid(
     x: centroid.x + (point.x - centroid.x) * factor,
     y: centroid.y + (point.y - centroid.y) * factor,
   }));
+}
+
+function cross(o: ContourPoint, a: ContourPoint, b: ContourPoint): number {
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+function convexHull(points: ContourPoint[]): ContourPoint[] {
+  const unique = Array.from(
+    new Map(points.map((point) => [`${point.x.toFixed(3)}:${point.y.toFixed(3)}`, point])).values(),
+  ).sort((a, b) => a.x - b.x || a.y - b.y);
+
+  if (unique.length <= 2) return unique;
+
+  const lower: ContourPoint[] = [];
+  for (const point of unique) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+
+  const upper: ContourPoint[] = [];
+  for (let i = unique.length - 1; i >= 0; i -= 1) {
+    const point = unique[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
+
+function getDieCutPoints(layers: StickerLayer[]): ContourPoint[] | null {
+  const points: ContourPoint[] = [];
+
+  for (const layer of layers) {
+    if (layer.type === "image") {
+      // An opaque image has no trustworthy silhouette. Do not pretend its
+      // rectangular bounds are a die-cut outline. The Image Settings panel
+      // lets the user create a transparent version first.
+      if (!layer.contourPoints?.length) {
+        return null;
+      }
+
+      for (const point of layer.contourPoints) {
+        points.push({
+          x: layer.x + point.x * layer.width,
+          y: layer.y + point.y * layer.height,
+        });
+      }
+      continue;
+    }
+
+    points.push(
+      { x: layer.x, y: layer.y },
+      { x: layer.x + layer.width, y: layer.y },
+      { x: layer.x + layer.width, y: layer.y + layer.fontSize * 1.15 },
+      { x: layer.x, y: layer.y + layer.fontSize * 1.15 },
+    );
+  }
+
+  const hull = convexHull(points);
+  return hull.length >= 3 ? hull : null;
 }
 
 // ============================================================================
@@ -578,23 +645,9 @@ export default function StickerCanvas({
   // DIE-CUT GUIDE DATA
   // --------------------------------------------------------------------------
 
-  const targetImageLayer = layers.find(
-    (layer): layer is StickerImageLayer => layer.type === "image",
-  );
-
-  const contourGuidePoints: ContourPoint[] | null =
-    targetImageLayer?.contourPoints
-      ? targetImageLayer.contourPoints.map((point) => ({
-          x: targetImageLayer.x + point.x * targetImageLayer.width,
-          y: targetImageLayer.y + point.y * targetImageLayer.height,
-        }))
-      : null;
-
-  const whiteBackingPoints = contourGuidePoints
-    ? offsetFromCentroid(
-        contourGuidePoints,
-        DIE_CUT_WHITE_BORDER_FACTOR,
-      )
+  const dieCutPoints = getDieCutPoints(layers);
+  const whiteBackingPoints = dieCutPoints
+    ? offsetFromCentroid(dieCutPoints, DIE_CUT_WHITE_BORDER_FACTOR)
     : null;
 
   return (
@@ -774,42 +827,43 @@ export default function StickerCanvas({
               />
             )}
 
-            {showGuides &&
-              shape === "Die-cut" &&
-              (contourGuidePoints ? (
+            {showGuides && shape === "Die-cut" && (
+              whiteBackingPoints ? (
                 <Line
-                  points={flattenPoints(whiteBackingPoints!)}
+                  points={flattenPoints(whiteBackingPoints)}
                   closed
                   stroke="#111111"
                   strokeWidth={2}
                   dash={[10, 8]}
                   listening={false}
                 />
-              ) : targetImageLayer ? (
-                <Rect
-                  x={targetImageLayer.x - 14}
-                  y={targetImageLayer.y - 14}
-                  width={targetImageLayer.width + 28}
-                  height={targetImageLayer.height + 28}
-                  cornerRadius={24}
-                  stroke="#111111"
-                  strokeWidth={2}
-                  dash={[10, 8]}
-                  listening={false}
-                />
               ) : (
-                <Rect
-                  x={CANVAS_MARGIN + 10}
-                  y={CANVAS_MARGIN + 10}
-                  width={PRINT_AREA_SIZE - 20}
-                  height={PRINT_AREA_SIZE - 20}
-                  cornerRadius={48}
-                  stroke="#111111"
-                  strokeWidth={2}
-                  dash={[10, 8]}
-                  listening={false}
-                />
-              ))}
+                <Group listening={false}>
+                  <Rect
+                    x={CANVAS_MARGIN + 12}
+                    y={CANVAS_MARGIN + 12}
+                    width={PRINT_AREA_SIZE - 24}
+                    height={PRINT_AREA_SIZE - 24}
+                    cornerRadius={18}
+                    stroke="#111111"
+                    strokeWidth={2}
+                    dash={[8, 8]}
+                    opacity={0.18}
+                  />
+                  <KonvaText
+                    x={CANVAS_MARGIN + 28}
+                    y={CANVAS_MARGIN + PRINT_AREA_SIZE - 48}
+                    width={PRINT_AREA_SIZE - 56}
+                    text="Die-cut ready when your artwork has a transparent edge"
+                    fontSize={11}
+                    fontStyle="bold"
+                    fill="#111111"
+                    opacity={0.5}
+                    align="center"
+                  />
+                </Group>
+              )
+            )}
 
             {/* ================================================================
                 TRANSFORMER (hidden during thumbnail export)

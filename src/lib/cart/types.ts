@@ -40,6 +40,10 @@ export type StickerImageLayer = {
   height: number;
   rotation: number;
   contourPoints: { x: number; y: number }[] | null;
+  /** Original uploaded source, kept so background removal can be undone. */
+  originalSrc?: string;
+  /** True when the local background-removal pass has been applied. */
+  backgroundRemoved?: boolean;
 };
 
 export type StickerTextLayer = {
@@ -75,4 +79,7 @@ export type CustomStickerCartLine = {
   unitPrice: number;
   lineTotal: number;
   thumbnailUrl: string;
+  /** Presigned-S3 object containing the flattened print artwork. */
+  artworkObjectKey?: string;
+  artworkContentType?: string;
 };

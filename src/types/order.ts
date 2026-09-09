@@ -6,11 +6,13 @@ import type { CustomerData } from "@/components/checkout/customer-form";
 // ============================================================================
 
 export type OrderStatus =
+  | "awaiting_payment"
   | "placed"
   | "processing"
   | "packed"
   | "shipped"
-  | "delivered";
+  | "delivered"
+  | "cancelled";
 
 
 // ============================================================================
@@ -25,6 +27,10 @@ export type StoredOrderItem = {
   productName: string;
 
   imageUrl?: string;
+
+  /** Private S3 object reference for custom artwork. */
+  artworkObjectKey?: string;
+  artworkContentType?: string;
 
   size: string;
 
@@ -54,6 +60,14 @@ export type StoredOrder = {
   customer: CustomerData;
 
   paymentMethod: string;
+
+  paymentStatus?:
+    | "pending"
+    | "pending_confirmation"
+    | "paid"
+    | "failed"
+    | "cancelled"
+    | "refunded";
 
   items: StoredOrderItem[];
 

@@ -1,0 +1,10 @@
+{
+  "CORSRules": [
+    {
+      "AllowedHeaders": ["*"],
+      "AllowedMethods": ["PUT", "GET", "HEAD"],
+      "AllowedOrigins": ["http://localhost:3000", "https://stickhive.app"],
+      "ExposeHeaders": ["ETag"]
+    }
+  ]
+}

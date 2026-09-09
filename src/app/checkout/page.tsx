@@ -11,7 +11,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
-  CreditCard,
   LockKeyhole,
   Package,
   ShieldCheck,
@@ -31,19 +30,6 @@ import {
   saveAddress,
 } from "@/lib/address-storage";
 
-import type {
-  OrderStatus,
-  StoredOrder,
-  StoredOrderItem,
-} from "@/types/order";
-
-
-// ============================================================================
-// STORAGE
-// ============================================================================
-
-const ORDERS_STORAGE_KEY =
-  "stickhive:orders";
 
 
 // ============================================================================
@@ -63,118 +49,6 @@ const INITIAL_CUSTOMER: CustomerData = {
     pincode: "",
   },
 };
-
-
-// ============================================================================
-// GENERATE ORDER ID
-// ============================================================================
-
-function generateOrderId() {
-
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID ===
-      "function"
-  ) {
-    return `SH-${crypto
-      .randomUUID()
-      .split("-")[0]
-      .toUpperCase()}`;
-  }
-
-  return `SH-${Date.now()
-    .toString(36)
-    .toUpperCase()}`;
-}
-
-
-// ============================================================================
-// READ STORED ORDERS
-// ============================================================================
-
-function readStoredOrders(): StoredOrder[] {
-
-  if (
-    typeof window ===
-    "undefined"
-  ) {
-    return [];
-  }
-
-  try {
-
-    const stored =
-      localStorage.getItem(
-        ORDERS_STORAGE_KEY,
-      );
-
-    if (!stored) {
-      return [];
-    }
-
-    const parsed =
-      JSON.parse(stored);
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed as StoredOrder[];
-
-  } catch (error) {
-
-    console.error(
-      "Unable to load StickHive orders:",
-      error,
-    );
-
-    return [];
-  }
-}
-
-
-// ============================================================================
-// SAVE ORDER
-// ============================================================================
-
-function saveStoredOrder(
-  order: StoredOrder,
-) {
-
-  if (
-    typeof window ===
-    "undefined"
-  ) {
-    return;
-  }
-
-  try {
-
-    const existingOrders =
-      readStoredOrders();
-
-    const updatedOrders = [
-      order,
-      ...existingOrders,
-    ];
-
-    localStorage.setItem(
-      ORDERS_STORAGE_KEY,
-      JSON.stringify(
-        updatedOrders,
-      ),
-    );
-
-  } catch (error) {
-
-    console.error(
-      "Unable to save StickHive order:",
-      error,
-    );
-
-    throw error;
-  }
-}
 
 
 // ============================================================================
@@ -226,6 +100,8 @@ export default function CheckoutPage() {
     setEmailVerified,
   ] = useState(false);
 
+  const paymentMethod = "upi" as const;
+
 
   // ==========================================================================
   // ORDER STATE
@@ -241,11 +117,6 @@ export default function CheckoutPage() {
     orderError,
     setOrderError,
   ] = useState("");
-
-  const [
-    showPaymentProcessing,
-    setShowPaymentProcessing,
-  ] = useState(false);
 
 
   // ==========================================================================
@@ -429,360 +300,100 @@ export default function CheckoutPage() {
   }
 
 
-  // ==========================================================================
+  // ============================================================================
   // PLACE ORDER
-  // ==========================================================================
+  // ============================================================================
 
   async function handlePlaceOrder() {
-
     setOrderError("");
 
+    const validationErrors = validateCustomer(customer);
+    setErrors(validationErrors);
 
-    // ------------------------------------------------------------------------
-    // VALIDATE CUSTOMER
-    // ------------------------------------------------------------------------
-
-    const validationErrors =
-      validateCustomer(
-        customer,
-      );
-
-
-    setErrors(
-      validationErrors,
-    );
-
-
-    // ------------------------------------------------------------------------
-    // STOP IF INVALID
-    // ------------------------------------------------------------------------
-
-    if (
-      validationErrors.name ||
-      validationErrors.email ||
-      validationErrors.phone ||
-      validationErrors.address
-    ) {
+    if (validationErrors.name || validationErrors.email || validationErrors.phone || validationErrors.address) {
       return;
     }
-
-
-    // ------------------------------------------------------------------------
-    // STOP IF EMAIL NOT VERIFIED
-    // ------------------------------------------------------------------------
 
     if (!emailVerified) {
-
-      setOrderError(
-        "Please verify your email address before placing your order.",
-      );
-
+      setOrderError("Please verify your email address before placing your order.");
       return;
     }
 
-
-    // ------------------------------------------------------------------------
-    // START PAYMENT ANIMATION
-    // ------------------------------------------------------------------------
-
-    setIsPlacingOrder(
-      true,
-    );
-
-    setShowPaymentProcessing(
-      true,
-    );
-
+    setIsPlacingOrder(true);
 
     try {
+      const items = [
+        ...cartLines.map((item) => ({
+          type: "product" as const,
+          productId: item.productId,
+          size: item.size,
+          quantity: item.quantity,
+        })),
+        ...customCartLines.map((item) => {
+          if (!item.artworkObjectKey || !item.artworkContentType) {
+            throw new Error("Custom sticker artwork is missing. Please open the design and add it to cart again.");
+          }
+          return {
+            type: "custom" as const,
+            cartLineId: item.id,
+            size: item.size,
+            shape: item.shape,
+            finish: item.finish,
+            quantity: item.quantity,
+            artworkObjectKey: item.artworkObjectKey,
+            artworkContentType: item.artworkContentType,
+          };
+        }),
+      ];
 
-      // ======================================================================
-      // SIMULATED UPI PROCESSING
-      // ======================================================================
-      //
-      // Temporary development behaviour.
-      //
-      // Later this will be replaced by
-      // the actual UPI payment gateway.
-      //
-      // ======================================================================
-
-      await new Promise<void>(
-        (resolve) => {
-          setTimeout(
-            resolve,
-            1800,
-          );
-        },
-      );
-
-
-      // ======================================================================
-      // SAVE ADDRESS
-      // ======================================================================
-
-      saveAddress({
-
-        addressLine1:
-          customer.address
-            .addressLine1
-            .trim(),
-
-        addressLine2:
-          customer.address
-            .addressLine2
-            ?.trim() ||
-          undefined,
-
-        landmark:
-          customer.address
-            .landmark
-            ?.trim() ||
-          undefined,
-
-        city:
-          customer.address
-            .city
-            .trim(),
-
-        state:
-          customer.address
-            .state
-            .trim(),
-
-        pincode:
-          customer.address
-            .pincode
-            .trim(),
-
-        isDefault:
-          true,
-
+      const orderResponse = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentMethod,
+          customer: {
+            name: customer.name.trim(),
+            email: customer.email.trim().toLowerCase(),
+            phone: customer.phone.replace(/\D/g, ""),
+            address: {
+              addressLine1: customer.address.addressLine1.trim(),
+              addressLine2: customer.address.addressLine2?.trim() || undefined,
+              landmark: customer.address.landmark?.trim() || undefined,
+              city: customer.address.city.trim(),
+              state: customer.address.state.trim(),
+              pincode: customer.address.pincode.replace(/\D/g, ""),
+            },
+          },
+          items,
+        }),
       });
 
+      const orderData = await orderResponse.json();
+      if (!orderResponse.ok || !orderData.success) {
+        throw new Error(orderData.error ?? "Unable to place your order.");
+      }
 
-      // ======================================================================
-      // NORMAL PRODUCTS
-      // ======================================================================
+      saveAddress({
+        addressLine1: customer.address.addressLine1.trim(),
+        addressLine2: customer.address.addressLine2?.trim() || undefined,
+        landmark: customer.address.landmark?.trim() || undefined,
+        city: customer.address.city.trim(),
+        state: customer.address.state.trim(),
+        pincode: customer.address.pincode.trim(),
+        isDefault: true,
+      });
 
-      const normalOrderItems:
-        StoredOrderItem[] =
-        cartLines.map(
-          (item) => ({
-
-            type:
-              "product",
-
-            productId:
-              item.productId,
-
-            productName:
-              item.product.name,
-
-            imageUrl:
-              item.product.image,
-
-            size:
-              item.size,
-
-            quantity:
-              item.quantity,
-
-            unitPrice:
-              item.unitPrice,
-
-            lineTotal:
-              item.lineTotal,
-
-          }),
-        );
-
-
-      // ======================================================================
-      // CUSTOM PRODUCTS
-      // ======================================================================
-
-      const customOrderItems:
-        StoredOrderItem[] =
-        customCartLines.map(
-          (item) => ({
-
-            type:
-              "custom",
-
-            productName:
-              "Custom Sticker",
-
-            imageUrl:
-              item.thumbnailUrl,
-
-            size:
-              item.size,
-
-            shape:
-              item.shape,
-
-            finish:
-              item.finish,
-
-            quantity:
-              item.quantity,
-
-            unitPrice:
-              item.unitPrice,
-
-            lineTotal:
-              item.lineTotal,
-
-          }),
-        );
-
-
-      // ======================================================================
-      // COMBINE ITEMS
-      // ======================================================================
-
-      const orderItems:
-        StoredOrderItem[] = [
-          ...normalOrderItems,
-          ...customOrderItems,
-        ];
-
-
-      // ======================================================================
-      // ORDER ID
-      // ======================================================================
-
-      const orderId =
-        generateOrderId();
-
-
-      // ======================================================================
-      // CREATE ORDER
-      // ======================================================================
-
-      const order:
-        StoredOrder = {
-
-        orderId,
-
-        createdAt:
-          new Date()
-            .toISOString(),
-
-        status:
-          "placed" as OrderStatus,
-
-        customer: {
-
-          ...customer,
-
-          address: {
-
-            addressLine1:
-              customer.address
-                .addressLine1
-                .trim(),
-
-            addressLine2:
-              customer.address
-                .addressLine2
-                ?.trim() ||
-              undefined,
-
-            landmark:
-              customer.address
-                .landmark
-                ?.trim() ||
-              undefined,
-
-            city:
-              customer.address
-                .city
-                .trim(),
-
-            state:
-              customer.address
-                .state
-                .trim(),
-
-            pincode:
-              customer.address
-                .pincode
-                .trim(),
-
-          },
-
-        },
-
-        // ====================================================================
-        // PAYMENT
-        // ====================================================================
-
-        paymentMethod:
-          "UPI",
-
-        items:
-          orderItems,
-
-        subtotal:
-          cartSubtotal,
-
-        shipping:
-          shippingCost,
-
-        total:
-          cartTotal,
-
-      };
-
-
-      // ======================================================================
-      // SAVE ORDER
-      // ======================================================================
-
-      saveStoredOrder(
-        order,
-      );
-
-
-      // ======================================================================
-      // CLEAR CART
-      // ======================================================================
+      const order = orderData.order;
+      localStorage.setItem("stickhive:last-order", JSON.stringify(order));
 
       clearAllCart();
-
-
-      // ======================================================================
-      // REDIRECT
-      // ======================================================================
-
-      window.location.href =
-        `/order-success?orderId=${encodeURIComponent(
-          orderId,
-        )}`;
-
+      window.location.href = `/order-success?orderId=${encodeURIComponent(order.orderId)}&payment=upi`;
     } catch (error) {
-
-      console.error(
-        "Unable to place StickHive order:",
-        error,
-      );
-
-      setOrderError(
-        "Something went wrong while placing your order. Please try again.",
-      );
-
-      setShowPaymentProcessing(
-        false,
-      );
-
-      setIsPlacingOrder(
-        false,
-      );
+      console.error("Unable to place Stick Hive order:", error);
+      setOrderError(error instanceof Error ? error.message : "Something went wrong while placing your order.");
+      setIsPlacingOrder(false);
     }
   }
-
 
   // ==========================================================================
   // RENDER
@@ -790,171 +401,6 @@ export default function CheckoutPage() {
 
   return (
     <>
-      {showPaymentProcessing && (
-        <div
-          className="
-            fixed
-            inset-0
-            z-[9999]
-            flex
-            items-center
-            justify-center
-            bg-black/50
-            px-6
-            backdrop-blur-md
-          "
-          role="dialog"
-          aria-modal="true"
-          aria-label="Processing UPI payment"
-        >
-          <div
-            className="
-              w-full
-              max-w-sm
-              rounded-[2rem]
-              bg-white
-              p-8
-              text-center
-              shadow-2xl
-              md:p-10
-            "
-          >
-            <div
-              className="
-                relative
-                mx-auto
-                flex
-                size-24
-                items-center
-                justify-center
-              "
-            >
-              <span
-                className="
-                  absolute
-                  inset-0
-                  animate-ping
-                  rounded-full
-                  bg-hive-yellow/30
-                "
-              />
-
-              <span
-                className="
-                  absolute
-                  inset-2
-                  animate-spin
-                  rounded-full
-                  border-4
-                  border-black/10
-                  border-t-black
-                "
-              />
-
-              <div
-                className="
-                  relative
-                  flex
-                  size-14
-                  items-center
-                  justify-center
-                  rounded-full
-                  bg-hive-yellow
-                "
-              >
-                <CreditCard
-                  size={25}
-                  strokeWidth={2.5}
-                />
-              </div>
-            </div>
-
-            <h2
-              className="
-                mt-7
-                text-2xl
-                font-extrabold
-              "
-            >
-              Processing Payment
-            </h2>
-
-            <p
-              className="
-                mx-auto
-                mt-3
-                max-w-xs
-                text-sm
-                leading-relaxed
-                text-black/50
-              "
-            >
-              Please wait while we confirm
-              your UPI payment. Do not
-              close this window.
-            </p>
-
-            <div
-              className="
-                mx-auto
-                mt-6
-                flex
-                items-center
-                justify-center
-                gap-1.5
-              "
-              aria-hidden="true"
-            >
-              <span
-                className="
-                  size-2
-                  animate-bounce
-                  rounded-full
-                  bg-black
-                  [animation-delay:-0.3s]
-                "
-              />
-              <span
-                className="
-                  size-2
-                  animate-bounce
-                  rounded-full
-                  bg-black
-                  [animation-delay:-0.15s]
-                "
-              />
-              <span
-                className="
-                  size-2
-                  animate-bounce
-                  rounded-full
-                  bg-black
-                "
-              />
-            </div>
-
-            <div
-              className="
-                mt-7
-                h-1.5
-                overflow-hidden
-                rounded-full
-                bg-black/10
-              "
-            >
-              <div
-                className="
-                  h-full
-                  w-1/2
-                  animate-[payment-progress_1.8s_ease-in-out_forwards]
-                  rounded-full
-                  bg-hive-yellow
-                "
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       <main
       className="
@@ -1422,81 +868,28 @@ export default function CheckoutPage() {
 
 
             {/* ============================================================ */}
-            {/* UPI PAYMENT                                                    */}
+            {/* PAYMENT METHOD                                                */}
             {/* ============================================================ */}
 
-            <div
-              className="
-                mt-7
-                rounded-2xl
-                border
-                border-black/10
-                bg-cream
-                p-4
-              "
-            >
+            <div className="mt-7 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-black/40">
+                Payment Method
+              </p>
 
-              <div
-                className="
-                  flex
-                  items-start
-                  gap-3
-                "
-              >
-
-                <div
-                  className="
-                    flex
-                    size-10
-                    shrink-0
-                    items-center
-                    justify-center
-                    rounded-xl
-                    bg-white
-                  "
-                >
-
-                  <CreditCard
-                    size={19}
-                  />
-
+              <div className="w-full rounded-2xl border border-black bg-black p-4 text-left text-white">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black">
+                    ₹
+                  </div>
+                  <div>
+                    <p className="font-bold">UPI</p>
+                    <p className="mt-1 text-xs leading-relaxed opacity-70">
+                      You&apos;ll get a Stick Hive payment QR after your order is created.
+                    </p>
+                  </div>
                 </div>
-
-
-                <div>
-
-                  <p
-                    className="
-                      font-bold
-                    "
-                  >
-                    UPI Payment
-                  </p>
-
-
-                  <p
-                    className="
-                      mt-1
-                      text-xs
-                      leading-relaxed
-                      text-black/50
-                    "
-                  >
-                    Pay securely using
-                    your preferred UPI
-                    app.
-                  </p>
-
-                </div>
-
               </div>
-
             </div>
-
-
-            {/* ============================================================ */}
-            {/* ERROR                                                         */}
-            {/* ============================================================ */}
 
             {orderError && (
 
@@ -1579,7 +972,7 @@ export default function CheckoutPage() {
                   />
 
                   <span>
-                    Processing Payment...
+                    Creating Order...
                   </span>
 
                 </>
@@ -1595,7 +988,7 @@ export default function CheckoutPage() {
                 <>
 
                   <span>
-                    Pay with UPI
+                    Place Order with UPI
                   </span>
 
                   <ArrowRight

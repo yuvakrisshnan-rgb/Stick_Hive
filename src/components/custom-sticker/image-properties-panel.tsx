@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageIcon, RefreshCw, RotateCcw } from "lucide-react";
+import { ImageIcon, RefreshCw, RotateCcw, WandSparkles } from "lucide-react";
 
 import type { StickerImageLayer } from "@/lib/cart/types";
 
@@ -14,6 +14,9 @@ type ImagePropertiesPanelProps = {
   onChange: (updates: Partial<StickerImageLayer>) => void;
   onCommitHistory: () => void;
   isDetectingContour: boolean;
+  isRemovingBackground: boolean;
+  onRemoveBackground: () => void;
+  onRestoreOriginal: () => void;
 };
 
 // ============================================================================
@@ -26,6 +29,9 @@ export default function ImagePropertiesPanel({
   onChange,
   onCommitHistory,
   isDetectingContour,
+  isRemovingBackground,
+  onRemoveBackground,
+  onRestoreOriginal,
 }: ImagePropertiesPanelProps) {
   return (
     <section
@@ -109,20 +115,50 @@ export default function ImagePropertiesPanel({
         </button>
       </div>
 
-      {isDetectingContour ? (
-        <p className="mt-3 text-xs font-semibold text-black/40">
-          Detecting die-cut outline…
-        </p>
-      ) : layer.contourPoints ? (
-        <p className="mt-3 text-xs font-semibold text-green-600">
-          ✓ Die-cut outline detected from this image
-        </p>
-      ) : (
-        <p className="mt-3 text-xs font-semibold text-black/40">
-          For a precise die-cut outline, upload a PNG with a transparent
-          background.
-        </p>
-      )}
+      <div className="mt-4 rounded-2xl border border-black/5 bg-cream/60 p-4">
+        {isDetectingContour ? (
+          <p className="text-xs font-semibold text-black/45">
+            Detecting the cutline…
+          </p>
+        ) : layer.contourPoints ? (
+          <div>
+            <p className="text-xs font-bold text-green-700">
+              ✓ True die-cut outline ready
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-black/45">
+              The cutline follows the visible artwork instead of the image rectangle.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs font-bold text-black/70">
+              Die-cut needs a transparent edge
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-black/45">
+              Use a transparent PNG, or try the local background remover for a simple flat background.
+            </p>
+            <button
+              type="button"
+              onClick={onRemoveBackground}
+              disabled={isRemovingBackground}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-black px-3 py-2.5 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+            >
+              <WandSparkles size={14} />
+              {isRemovingBackground ? "Removing background…" : "Make Die-cut Ready"}
+            </button>
+          </div>
+        )}
+
+        {layer.backgroundRemoved && layer.originalSrc && (
+          <button
+            type="button"
+            onClick={onRestoreOriginal}
+            className="mt-2 w-full rounded-xl bg-white px-3 py-2 text-xs font-bold text-black/65 transition hover:bg-black/5"
+          >
+            Restore original image
+          </button>
+        )}
+      </div>
 
       <p className="mt-4 text-xs leading-relaxed text-black/40">
         Drag on the canvas to move. Drag the corner handles to resize.

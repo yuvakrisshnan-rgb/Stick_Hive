@@ -6,7 +6,12 @@ import {
 } from "next/navigation";
 
 
-import StickerBuilder from "@/components/custom-sticker/sticker-builder";
+import dynamic from "next/dynamic";
+
+const StickerBuilder = dynamic(
+  () => import("@/components/custom-sticker/sticker-builder"),
+  { ssr: false },
+);
 
 
 
