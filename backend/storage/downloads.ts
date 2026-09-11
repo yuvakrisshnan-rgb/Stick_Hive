@@ -18,11 +18,3 @@ export async function getArtworkObject(objectKey: string) {
   }));
 }
 
-export async function createPaymentProofUrl(objectKey: string, filename?: string): Promise<string> {
-  const command = new GetObjectCommand({
-    Bucket: getS3BucketName(),
-    Key: objectKey,
-    ...(filename ? { ResponseContentDisposition: `inline; filename="${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}"` } : {}),
-  });
-  return getSignedUrl(getS3Client(), command, { expiresIn: 300 });
-}

@@ -25,7 +25,7 @@ const shippingDetailsSchema = z.object({
 
 const schema = z.object({
   paymentStatus: z.enum(["pending_confirmation", "paid", "failed", "cancelled", "refunded"]).optional(),
-  status: z.enum(["placed", "processing", "packed", "shipped", "delivered", "cancelled"]).optional(),
+  status: z.enum(["placed", "processing", "packed", "shipped", "out_for_delivery", "delivered", "cancelled"]).optional(),
   paymentVerification: paymentVerificationSchema.optional(),
   shippingDetails: shippingDetailsSchema.optional(),
 }).refine((value) => value.paymentStatus || value.status || value.paymentVerification, "At least one update is required.");

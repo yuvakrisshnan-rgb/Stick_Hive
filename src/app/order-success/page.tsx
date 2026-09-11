@@ -21,7 +21,6 @@ import {
   MapPin,
   Phone,
   Mail,
-  Upload,
   RefreshCw,
 } from "lucide-react";
 
@@ -109,12 +108,6 @@ type StoredOrder = {
 
   paymentExpiresAt?: string;
 
-  paymentProof?: {
-    objectKey: string;
-    contentType: string;
-    fileName: string;
-    uploadedAt: string;
-  };
 
   upiPayment?: {
     upiId: string;
@@ -344,8 +337,6 @@ export default function OrderSuccessPage() {
     setPaymentMessage,
   ] = useState("");
 
-  const [proofFile, setProofFile] = useState<File | null>(null);
-  const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [isRetryingPayment, setIsRetryingPayment] = useState(false);
   const [paymentCountdown, setPaymentCountdown] = useState("");
 
@@ -419,6 +410,23 @@ export default function OrderSuccessPage() {
     };
   }, [orderId]);
 
+
+  useEffect(() => {
+    if (!order || order.paymentMethod !== "upi" || order.paymentStatus === "paid" || order.paymentStatus === "cancelled") return;
+    let stopped = false;
+    const sync = async () => {
+      try {
+        const response = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}/payment-sync`, { method: "POST", cache: "no-store" });
+        const data = await response.json().catch(() => null);
+        if (!stopped && response.ok && data?.success && data.order) setOrder(data.order as StoredOrder);
+      } catch {
+        // Payment may simply still be pending; do not interrupt the checkout screen.
+      }
+    };
+    void sync();
+    const timer = setInterval(() => void sync(), 10000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [order?.orderId, order?.paymentMethod, order?.paymentStatus]);
 
   useEffect(() => {
     const expiresAt = order?.paymentExpiresAt;
@@ -627,29 +635,6 @@ export default function OrderSuccessPage() {
     order;
 
 
-  async function handleUploadProof() {
-    if (!proofFile) {
-      setPaymentMessage("Choose your payment screenshot first.");
-      return;
-    }
-    setPaymentMessage("");
-    setIsUploadingProof(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", proofFile);
-      const response = await fetch(`/api/orders/${encodeURIComponent(currentOrder.orderId)}/payment-proof`, { method: "POST", body: formData });
-      const data = await response.json();
-      if (!response.ok || !data?.success) throw new Error(data?.error ?? "Unable to upload payment proof.");
-      setOrder((previous) => previous ? { ...previous, paymentProof: data.proof } : previous);
-      setProofFile(null);
-      setPaymentMessage("Payment proof uploaded. Now click I’ve Paid.");
-    } catch (error) {
-      setPaymentMessage(error instanceof Error ? error.message : "Unable to upload payment proof.");
-    } finally {
-      setIsUploadingProof(false);
-    }
-  }
-
   async function handleRetryPayment() {
     setPaymentMessage("");
     setIsRetryingPayment(true);
@@ -659,7 +644,7 @@ export default function OrderSuccessPage() {
       if (!response.ok || !data?.success) throw new Error(data?.error ?? "Unable to restart payment.");
       setOrder(data.order as StoredOrder);
       setQrDataUrl("");
-      setPaymentMessage("A fresh 20-minute payment window is ready. Pay again using the new QR, then upload your proof.");
+      setPaymentMessage("A fresh 20-minute payment window is ready. Pay again using the new QR.");
     } catch (error) {
       setPaymentMessage(error instanceof Error ? error.message : "Unable to restart payment.");
     } finally {
@@ -745,6 +730,12 @@ export default function OrderSuccessPage() {
 
       paymentMethod:
         currentOrder.paymentMethod,
+
+      paymentStatus:
+        currentOrder.paymentStatus,
+
+      paymentVerification:
+        currentOrder.paymentVerification,
 
       items:
         currentOrder.items,
@@ -974,51 +965,18 @@ export default function OrderSuccessPage() {
                 </div>
               </div>
 
-              <div className="mt-6 rounded-3xl border border-black/10 bg-black/[0.02] p-5 text-left">
-                <div className="flex items-start gap-3"><Upload size={20} className="mt-0.5 shrink-0" /><div><p className="font-extrabold">Payment proof</p><p className="mt-1 text-sm leading-6 text-black/50">Upload a screenshot of the successful UPI payment. PNG, JPEG or WebP up to 5 MB.</p></div></div>
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <input
-                    id="payment-proof-file"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
-                    disabled={isUploadingProof || currentOrder.paymentStatus === "paid"}
-                    className="sr-only"
-                  />
-                  <label
-                    htmlFor="payment-proof-file"
-                    className={`inline-flex cursor-pointer items-center justify-center rounded-full border border-black px-4 py-3 text-sm font-extrabold transition hover:bg-black hover:text-white ${(isUploadingProof || currentOrder.paymentStatus === "paid") ? "pointer-events-none opacity-40" : ""}`}
-                  >
-                    {proofFile ? "Change Screenshot" : "Choose Screenshot"}
-                  </label>
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-black/60">
-                    {proofFile?.name ?? (currentOrder.paymentProof ? "A proof is already uploaded" : "No screenshot selected")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void handleUploadProof()}
-                    disabled={!proofFile || isUploadingProof || currentOrder.paymentStatus === "paid"}
-                    className="rounded-full border border-black px-4 py-3 text-sm font-extrabold transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {isUploadingProof ? "Uploading…" : currentOrder.paymentProof ? "Replace Proof" : "Upload Proof"}
-                  </button>
-                </div>
-                {currentOrder.paymentProof && <p className="mt-3 text-xs font-bold text-black/50">Proof uploaded · {new Date(currentOrder.paymentProof.uploadedAt).toLocaleString("en-IN")}</p>}
-              </div>
-
+              
               <button
                 type="button"
                 onClick={handleClaimUpiPayment}
-                disabled={isClaimingPayment || currentOrder.paymentStatus === "pending_confirmation" || !currentOrder.paymentProof}
+                disabled={isClaimingPayment || currentOrder.paymentStatus === "pending_confirmation"}
                 className="mt-5 w-full rounded-full bg-black px-6 py-4 font-bold text-white transition hover:scale-[1.01] hover:bg-honey-orange disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 disabled:hover:bg-black"
               >
                 {isClaimingPayment
-                  ? "Saving payment confirmation…"
+                  ? "Checking payment…"
                   : currentOrder.paymentStatus === "pending_confirmation"
-                    ? "Payment confirmation submitted"
-                    : currentOrder.paymentProof
-                      ? "I've Paid — Submit for Verification"
-                      : "Upload Proof to Continue"}
+                    ? "Payment verification in progress"
+                    : "I've Paid — Check Payment"}
               </button>
 
               {paymentMessage && (

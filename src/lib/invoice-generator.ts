@@ -19,6 +19,8 @@ type InvoiceOrder = {
 
 
   paymentMethod:string;
+  paymentStatus?:string;
+  paymentVerification?: { transactionId:string; utr?:string; paidAmount:number; paidAt:string; };
 
 
   items:{
@@ -196,7 +198,7 @@ const doc = new jsPDF();
 // --------------------------------------------------
 
 
-const honeyYellow = "#F7C948";
+const honeyYellow = "#FF6A00";
 
 const cream = "#FFF8ED";
 
@@ -344,7 +346,7 @@ doc.setFontSize(22);
 
 doc.text(
 
-"StickHive",
+"Stick Hive",
 
 60,
 
@@ -372,7 +374,7 @@ doc.setFontSize(9);
 
 doc.text(
 
-"Where ideas become stickers",
+"IDEAS FIND A HOME",
 
 60,
 
@@ -1024,7 +1026,7 @@ doc.setFont(
 
 doc.text(
 
-"Scan to visit StickHive",
+"Scan to visit Stick Hive",
 
 20,
 
@@ -1124,7 +1126,7 @@ doc.text(
 
 doc.save(
 
-`StickHive-Invoice-${order.orderId}.pdf`
+`Stick-Hive-Invoice-${order.orderId}.pdf`
 
 );
 

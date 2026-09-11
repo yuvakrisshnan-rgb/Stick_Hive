@@ -28,7 +28,6 @@ import {
   X,
   Mail,
   ShieldCheck,
-  Home,
 } from "lucide-react";
 
 
@@ -210,14 +209,6 @@ export default function Navbar() {
         <div
           className="hidden items-center gap-1 md:flex"
         >
-          <Link
-            href="/"
-            aria-label="Home"
-            className="flex size-10 items-center justify-center rounded-full text-black/70 transition hover:bg-hive-yellow hover:text-black"
-          >
-            <Home size={18} />
-          </Link>
-
           {links.map((link)=>(
 
 

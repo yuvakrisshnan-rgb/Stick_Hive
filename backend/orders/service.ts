@@ -66,12 +66,6 @@ export type OrderDocument = {
   paymentClaimedAt?: Date;
   paymentAttempt?: number;
   paymentExpiresAt?: Date;
-  paymentProof?: {
-    objectKey: string;
-    contentType: string;
-    fileName: string;
-    uploadedAt: Date;
-  };
   paymentVerification?: {
     transactionId: string;
     utr?: string;
@@ -114,13 +108,6 @@ export type OrderDocument = {
     lastCarrierLocation?: string;
     lastCarrierStatusAt?: Date;
     outForDeliveryEmailSentAt?: Date;
-    delhivery?: {
-      waybill: string;
-      pickupLocation: string;
-      createdAt: Date;
-      environment: "staging" | "production";
-      pickupId?: string;
-    };
     updatedAt: Date;
   };
 };
@@ -599,7 +586,7 @@ export async function updateAdminOrder(params: {
 export async function markOutForDeliveryEmailSent(orderId: string): Promise<void> {
   const collection = await getCollection<OrderDocument>("orders");
   await collection.updateOne(
-    { orderId, "shippingDetails.delhivery.waybill": { $exists: true } },
+    { orderId, "shippingDetails": { $exists: true } },
     { $set: { "shippingDetails.outForDeliveryEmailSentAt": new Date(), updatedAt: new Date() } },
   );
 }
@@ -614,9 +601,6 @@ function serializeOrder(order: OrderDocument) {
     paymentClaimedAt: order.paymentClaimedAt?.toISOString(),
     paymentAttempt: order.paymentAttempt,
     paymentExpiresAt: order.paymentExpiresAt?.toISOString(),
-    paymentProof: order.paymentProof
-      ? { ...order.paymentProof, uploadedAt: order.paymentProof.uploadedAt.toISOString() }
-      : undefined,
     paymentVerification: order.paymentVerification
       ? { ...order.paymentVerification, paidAt: order.paymentVerification.paidAt.toISOString(), verifiedAt: order.paymentVerification.verifiedAt.toISOString() }
       : undefined,
@@ -632,9 +616,6 @@ function serializeOrder(order: OrderDocument) {
           deliveredAt: order.shippingDetails.deliveredAt?.toISOString(),
           lastCarrierStatusAt: order.shippingDetails.lastCarrierStatusAt?.toISOString(),
           outForDeliveryEmailSentAt: order.shippingDetails.outForDeliveryEmailSentAt?.toISOString(),
-          delhivery: order.shippingDetails.delhivery
-            ? { ...order.shippingDetails.delhivery, createdAt: order.shippingDetails.delhivery.createdAt.toISOString() }
-            : undefined,
           updatedAt: order.shippingDetails.updatedAt.toISOString(),
         }
       : undefined,
@@ -664,7 +645,7 @@ export async function retryUpiPayment(orderId: string) {
     { orderId, userId, paymentMethod: "upi", paymentStatus: { $ne: "paid" } },
     {
       $set: { status: "awaiting_payment", paymentStatus: "pending", paymentAttempt, paymentExpiresAt, updatedAt: new Date() },
-      $unset: { paymentClaimedAt: "", paymentProof: "" },
+      $unset: { paymentClaimedAt: "" },
     },
     { returnDocument: "after" },
   );
@@ -680,7 +661,6 @@ export async function claimUpiPayment(orderId: string) {
   if (!current) throw new Error("Order is unavailable for UPI payment confirmation.");
   const activeOrder = await expireUpiPaymentIfNeeded(current);
   if (activeOrder.paymentStatus === "cancelled") throw new Error("This payment window has expired. Start payment again.");
-  if (!activeOrder.paymentProof?.objectKey) throw new Error("Upload a payment screenshot before submitting payment confirmation.");
   const result = await collection.findOneAndUpdate(
     {
       orderId,

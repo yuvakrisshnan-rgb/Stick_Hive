@@ -39,7 +39,7 @@ type Order = {
   paymentClaimedAt?: string;
   paymentAttempt?: number;
   paymentExpiresAt?: string;
-  paymentProof?: { objectKey: string; contentType: string; fileName: string; uploadedAt: string };
+ 
   shippingDetails?: {
     method: "courier" | "pickup" | "local_delivery";
     courier?: string;
@@ -53,7 +53,6 @@ type Order = {
     lastCarrierLocation?: string;
     lastCarrierStatusAt?: string;
     outForDeliveryEmailSentAt?: string;
-    delhivery?: { waybill: string; pickupLocation: string; createdAt: string; environment: "staging" | "production"; pickupId?: string };
     updatedAt: string;
   };
   paymentVerification?: {
@@ -117,7 +116,7 @@ export default function AdminPage() {
   const [packBusy, setPackBusy] = useState<string | null>(null);
   const [verifyOrder, setVerifyOrder] = useState<Order | null>(null);
   const [shippingOrder, setShippingOrder] = useState<Order | null>(null);
-  const [shipping, setShipping] = useState<{ method: "courier" | "pickup" | "local_delivery"; courier: string; trackingNumber: string; trackingUrl: string; pickupLocation: string; pickupInstructions: string; weightGrams: string; lengthCm: string; widthCm: string; heightCm: string; pickupDate: string; pickupTime: string; expectedPackageCount: string; }>({ method: "courier", courier: "", trackingNumber: "", trackingUrl: "", pickupLocation: "", pickupInstructions: "", weightGrams: "100", lengthCm: "20", widthCm: "15", heightCm: "4", pickupDate: "", pickupTime: "14:00:00", expectedPackageCount: "1" });
+  const [shipping, setShipping] = useState<{ method: "courier" | "pickup" | "local_delivery"; courier: string; trackingNumber: string; trackingUrl: string; pickupLocation: string; pickupInstructions: string; }>({ method: "courier", courier: "", trackingNumber: "", trackingUrl: "", pickupLocation: "", pickupInstructions: "" });
   const [verification, setVerification] = useState({
     transactionId: "",
     utr: "",
@@ -193,8 +192,6 @@ export default function AdminPage() {
 
 
   function openShippingEditor(order: Order) {
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const tomorrowDate = tomorrow.toISOString().slice(0, 10);
     setShipping({
       method: order.shippingDetails?.method ?? "courier",
       courier: order.shippingDetails?.courier ?? "",
@@ -202,7 +199,6 @@ export default function AdminPage() {
       trackingUrl: order.shippingDetails?.trackingUrl ?? "",
       pickupLocation: order.shippingDetails?.pickupLocation ?? "",
       pickupInstructions: order.shippingDetails?.pickupInstructions ?? "",
-      weightGrams: "100", lengthCm: "20", widthCm: "15", heightCm: "4", pickupDate: tomorrowDate, pickupTime: "14:00:00", expectedPackageCount: "1",
     });
     setShippingOrder(order);
   }
@@ -255,64 +251,6 @@ export default function AdminPage() {
     } finally {
       setBusy(null);
     }
-  }
-
-  async function createDelhiveryShipment() {
-    if (!shippingOrder) return;
-    if (shipping.courier.trim().toLowerCase() !== "delhivery") {
-      window.alert("Set the courier to Delhivery first.");
-      return;
-    }
-    setBusy(shippingOrder.orderId);
-    try {
-      const response = await fetch(`/api/admin/orders/${encodeURIComponent(shippingOrder.orderId)}/delhivery/create`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          weightGrams: Number(shipping.weightGrams), lengthCm: Number(shipping.lengthCm), widthCm: Number(shipping.widthCm), heightCm: Number(shipping.heightCm),
-          ...(shipping.pickupLocation.trim() ? { pickupLocation: shipping.pickupLocation.trim() } : {}),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || "Unable to create Delhivery shipment.");
-      setOrders((current) => current.map((order) => (order.orderId === shippingOrder.orderId ? data.order : order)));
-      setShippingOrder(data.order);
-      setShipping((v) => ({ ...v, courier: "Delhivery", trackingNumber: data.delhivery.waybill, trackingUrl: data.delhivery.trackingUrl, pickupLocation: data.delhivery.pickupLocation }));
-      window.alert(`Delhivery shipment created. AWB: ${data.delhivery.waybill}`);
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Unable to create Delhivery shipment.");
-    } finally { setBusy(null); }
-  }
-
-  async function syncDelhivery(order: Order) {
-    setBusy(order.orderId);
-    try {
-      const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.orderId)}/delhivery/sync`, { method: "POST" });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || "Unable to sync Delhivery tracking.");
-      await load();
-      window.alert(data.tracking.status ? `Delhivery status: ${data.tracking.status}` : "Tracking synced.");
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Unable to sync Delhivery tracking.");
-    } finally { setBusy(null); }
-  }
-
-  async function requestDelhiveryPickup(order: Order) {
-    if (!order.shippingDetails?.delhivery?.pickupLocation) {
-      window.alert("Create the Delhivery shipment first.");
-      return;
-    }
-    setBusy(order.orderId);
-    try {
-      const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.orderId)}/delhivery/pickup`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pickupLocation: order.shippingDetails.delhivery.pickupLocation, pickupDate: shipping.pickupDate, pickupTime: shipping.pickupTime, expectedPackageCount: Number(shipping.expectedPackageCount) }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || "Unable to schedule pickup.");
-      window.alert("Delhivery pickup request created.");
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Unable to schedule pickup.");
-    } finally { setBusy(null); }
   }
 
   async function submitShippingDetails() {
@@ -506,7 +444,7 @@ export default function AdminPage() {
                           <p className="mt-2 text-lg font-extrabold capitalize">{statusLabel(order.paymentStatus)}</p>
                           {order.paymentClaimedAt && <p className="mt-1 text-xs text-black/40">Claimed {new Date(order.paymentClaimedAt).toLocaleString("en-IN")}</p>}
                           {order.paymentExpiresAt && order.paymentStatus !== "paid" && <p className="mt-1 text-xs font-bold text-black/50">Payment window: {paymentRemaining(order.paymentExpiresAt) ?? "Expired"}</p>}
-                          {order.paymentProof && <a href={`/api/admin/orders/${encodeURIComponent(order.orderId)}/payment-proof`} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-2xl border border-black/10 bg-black/[0.02]"><img src={`/api/admin/orders/${encodeURIComponent(order.orderId)}/payment-proof`} alt="Customer payment proof" className="max-h-56 w-full object-contain" /><span className="block border-t border-black/10 px-3 py-2 text-xs font-extrabold">Open payment proof</span></a>}
+                          
                           {order.paymentStatus === "pending_confirmation" && (
                             <button disabled={busy === order.orderId} onClick={() => openPaymentVerification(order)} className="mt-4 w-full rounded-full bg-black px-4 py-3 text-sm font-bold text-white disabled:opacity-50">
                               Confirm Payment
@@ -536,7 +474,7 @@ export default function AdminPage() {
                         </label>
 
                         <div className="mt-4 rounded-3xl bg-white p-5 shadow-sm">
-                          <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-3"><Truck size={18} /><p className="font-extrabold">Delivery & tracking</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => order.shippingDetails?.courier === "Delhivery" && order.shippingDetails.trackingNumber ? void syncDelhivery(order) : undefined} disabled={busy === order.orderId || order.shippingDetails?.courier !== "Delhivery" || !order.shippingDetails?.trackingNumber} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-extrabold disabled:opacity-40">Sync</button><button type="button" onClick={() => openShippingEditor(order)} disabled={busy === order.orderId} className="rounded-full bg-black px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50">Edit</button></div></div>
+                          <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-3"><Truck size={18} /><p className="font-extrabold">Delivery & tracking</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => openShippingEditor(order)} disabled={busy === order.orderId} className="rounded-full bg-black px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50">Edit</button></div></div>
                           {order.shippingDetails ? <div className="mt-3 space-y-1 text-sm text-black/60"><p className="font-extrabold text-black">{order.shippingDetails.method === "courier" ? `${order.shippingDetails.courier}${order.shippingDetails.trackingNumber ? ` · ${order.shippingDetails.trackingNumber}` : ""}` : order.shippingDetails.method === "pickup" ? `Pickup · ${order.shippingDetails.pickupLocation}` : "Local delivery"}</p>{order.shippingDetails.method === "pickup" && order.shippingDetails.pickupInstructions && <p>{order.shippingDetails.pickupInstructions}</p>}{order.shippingDetails.method === "local_delivery" && order.shippingDetails.pickupInstructions && <p>{order.shippingDetails.pickupInstructions}</p>}{order.shippingDetails.trackingUrl && <a href={order.shippingDetails.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold underline underline-offset-4">Open tracking <ExternalLink size={13} /></a>}</div> : <p className="mt-2 text-sm text-black/50">No delivery details saved yet.</p>}
                           <p className="mt-3 text-xs text-black/40">Save delivery details here, then move the order through Shipped / Out for Delivery / Delivered.</p>
                           {customItems.length > 0 && <a href={`/api/admin/orders/${encodeURIComponent(order.orderId)}/print-pack`} className="mt-4 inline-flex items-center gap-2 text-sm font-extrabold underline underline-offset-4"><ExternalLink size={14} /> Open print pack download</a>}
@@ -561,22 +499,13 @@ export default function AdminPage() {
               {([['courier','Courier'],['local_delivery','Local delivery'],['pickup','Pickup']] as const).map(([value,label]) => <button key={value} type="button" onClick={() => setShipping((v) => ({ ...v, method: value }))} className={`rounded-2xl border px-4 py-4 text-left text-sm font-extrabold ${shipping.method === value ? 'border-black bg-black text-white' : 'border-black/10 bg-white'}`}>{label}</button>)}
             </div>
             {shipping.method === 'courier' ? <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Courier *</span><input value={shipping.courier} onChange={(e) => setShipping(v => ({...v,courier:e.target.value}))} placeholder="India Post, Delhivery…" className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold outline-none" /></label>
+              <label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Courier *</span><input value={shipping.courier} onChange={(e) => setShipping(v => ({...v,courier:e.target.value}))} placeholder="India Post, Blue Dart…" className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold outline-none" /></label>
               <label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Tracking / AWB *</span><input value={shipping.trackingNumber} onChange={(e) => setShipping(v => ({...v,trackingNumber:e.target.value}))} placeholder="EX123456789IN" className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold outline-none" /></label>
               <label className="block sm:col-span-2"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Tracking URL</span><input value={shipping.trackingUrl} onChange={(e) => setShipping(v => ({...v,trackingUrl:e.target.value}))} placeholder="https://courier.example/track/..." className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold outline-none" /></label>
             </div> : shipping.method === 'pickup' ? <div className="mt-5 grid gap-4">
               <label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup location *</span><input value={shipping.pickupLocation} onChange={(e) => setShipping(v => ({...v,pickupLocation:e.target.value}))} placeholder="SCIT / SPROUT IT desk" className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold outline-none" /></label>
               <label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup instructions</span><textarea value={shipping.pickupInstructions} onChange={(e) => setShipping(v => ({...v,pickupInstructions:e.target.value}))} rows={3} placeholder="Bring your order ID when collecting." className="mt-2 w-full resize-none rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold outline-none" /></label>
             </div> : <div className="mt-5"><label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Delivery note</span><textarea value={shipping.pickupInstructions} onChange={(e) => setShipping(v => ({...v,pickupInstructions:e.target.value}))} rows={3} placeholder="Hand-deliver at the event or local address." className="mt-2 w-full resize-none rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold outline-none" /></label></div>}
-            {shipping.method === "courier" && shipping.courier.trim().toLowerCase() === "delhivery" && (
-              <div className="mt-5 rounded-3xl bg-black/[0.03] p-5">
-                <p className="text-xs font-bold uppercase tracking-widest text-black/40">Delhivery API shipment</p>
-                <div className="mt-4 grid gap-4 sm:grid-cols-4">
-                  {[['Weight (g)','weightGrams','100'],['Length (cm)','lengthCm','20'],['Width (cm)','widthCm','15'],['Height (cm)','heightCm','4']].map(([label,key,placeholder]) => <label key={key} className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">{label}</span><input type="number" min="1" value={shipping[key as keyof typeof shipping] as string} onChange={(e) => setShipping(v => ({ ...v, [key]: e.target.value }))} placeholder={placeholder} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none" /></label>)}
-                </div>
-                {shipping.trackingNumber ? <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4"><p className="text-sm font-extrabold">AWB: {shipping.trackingNumber}</p>{shipping.trackingUrl && <a href={shipping.trackingUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-sm font-bold underline">Open Delhivery tracking <ExternalLink size={13}/></a>}<div className="mt-4 grid gap-3 sm:grid-cols-3"><label className="block sm:col-span-2"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup date</span><input type="date" value={shipping.pickupDate} onChange={(e) => setShipping(v=>({...v,pickupDate:e.target.value}))} className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold" /></label><label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup time</span><input type="time" step="1" value={shipping.pickupTime} onChange={(e) => setShipping(v=>({...v,pickupTime:e.target.value.length===5?`${e.target.value}:00`:e.target.value}))} className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold" /></label><label className="block"><span className="text-xs font-bold uppercase tracking-widest text-black/40">Packages</span><input type="number" min="1" value={shipping.expectedPackageCount} onChange={(e) => setShipping(v=>({...v,expectedPackageCount:e.target.value}))} className="mt-2 w-full rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold" /></label></div><button type="button" onClick={() => void requestDelhiveryPickup(shippingOrder)} disabled={busy===shippingOrder.orderId} className="mt-4 rounded-full border border-black/10 bg-black px-5 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busy===shippingOrder.orderId ? "Working…" : "Request Delhivery Pickup"}</button></div> : <button type="button" onClick={() => void createDelhiveryShipment()} disabled={busy===shippingOrder.orderId} className="mt-4 rounded-full bg-black px-5 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busy===shippingOrder.orderId ? "Creating…" : "Create Delhivery Shipment"}</button>}
-              </div>
-            )}
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShippingOrder(null)} className="rounded-full border border-black/10 px-6 py-3 text-sm font-bold">Cancel</button><button type="button" onClick={() => void submitShippingDetails()} disabled={busy === shippingOrder.orderId} className="rounded-full bg-black px-6 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busy === shippingOrder.orderId ? 'Saving…' : 'Save Delivery Details'}</button></div>
           </div>
         </div>

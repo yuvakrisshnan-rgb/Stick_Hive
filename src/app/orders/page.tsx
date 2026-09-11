@@ -31,7 +31,7 @@ type StoredOrder = {
   paymentMethod: string;
   paymentStatus?: PaymentStatus;
   paymentExpiresAt?: string;
-  paymentProof?: { uploadedAt: string };
+ 
   shippingDetails?: { method: "courier" | "pickup" | "local_delivery"; courier?: string; trackingNumber?: string; trackingUrl?: string; pickupLocation?: string; pickupInstructions?: string; shippedAt?: string; deliveredAt?: string; updatedAt: string };
   items: OrderItem[];
   subtotal: number;
