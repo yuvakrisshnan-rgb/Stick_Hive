@@ -483,3 +483,55 @@ text, not marketing headlines; the animated brand-reveal component that
 letters out "StickHive" one character at a time was kept sans regardless
 of its size, since it's the logo/wordmark treatment itself rather than
 page content.
+
+---
+
+## Next feature: automatic background removal for custom stickers
+
+### Goal
+
+Add client-side ML background removal as a new automatic step in the
+custom sticker upload flow. Today, a user uploads any photo, and
+`detectImageContour()` (`src/lib/custom-sticker/contour.ts`) traces a
+die-cut silhouette from the image's alpha channel — but that only
+produces a real (non-rectangular) outline if the uploaded file already
+has transparency. Most user photos don't (a plain JPG, or a PNG with an
+opaque background), so today those uploads fall back to a rectangular
+bounding shape.
+
+The new flow: user uploads any photo → background removal runs
+automatically → the result becomes a transparent PNG → the *existing*
+`detectImageContour()` then traces its silhouette exactly as it already
+does for pre-transparent images today. No changes needed to the contour
+tracer itself — it already handles this case correctly, it just needs to
+be fed a transparent image more often than it currently is.
+
+### Candidate library
+
+`@imgly/background-removal` — runs entirely in-browser via WebAssembly
+(ONNX runtime), free, no per-call API costs, no server round-trip. Note
+there is already a lightweight, dependency-free, non-ML background
+remover in this codebase
+(`removeSimpleBackground` in `src/lib/custom-sticker/background-removal.ts`)
+that flood-fills background-colored pixels from the image's corners —
+it works fine for flat/simple backgrounds but isn't real segmentation.
+The new ML step is additive, not a replacement for that function or the
+manual "Remove Background" button that already calls it per-layer.
+
+### Known tradeoffs to test for
+
+- **Model download size**: the ONNX segmentation model is roughly
+  10-80MB depending on the quality tier selected, fetched from a CDN on
+  first use and cached by the browser afterward. This is a real UX cost
+  on slow connections — needs a clear loading state (a few seconds is
+  the common case, but first-load-ever could be much longer).
+- **Imperfect results on busy/complex backgrounds**: this is a general
+  segmentation model, not sticker-specific — busy backgrounds, low
+  contrast between subject and background, or fine detail (hair,
+  fur, translucent edges) can produce ragged or incomplete cutouts.
+  Needs a way for the user to fall back to the original image or retry
+  if the automatic result looks wrong (the existing `handleRestoreOriginal`
+  / `originalSrc` mechanism on image layers already supports this).
+- Runs client-side, so no image data leaves the browser — good for
+  privacy/cost, but means processing time depends on the user's own
+  device (slower on low-end phones).
