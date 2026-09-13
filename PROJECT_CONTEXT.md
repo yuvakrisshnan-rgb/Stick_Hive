@@ -449,3 +449,37 @@ with zero build errors, since that may resolve on its own.
 4. Add `headers()` to `next.config.ts` for basic security headers.
 5. Add basic IP-based rate limiting in front of `send-otp`/`verify-otp`/
    `upload-url` (a `middleware.ts` is the natural place for this).
+
+---
+
+## Session Update — Fraunces Headline Font (Claude Chat, this session)
+
+Replaced an earlier Clash Display setup (tried, then rejected before ever
+being committed) with **Fraunces**, installed via
+`@fontsource-variable/fraunces` — the same self-hosted Google Fonts
+pattern already used for Playfair Display/Poppins/Caveat/Inter, imported
+in `src/app/layout.tsx`.
+
+The existing `.font-display` class was left untouched in meaning (bold
+sans) but given a real definition for the first time:
+`--font-display: "Space Grotesk", Arial, sans-serif` in `globals.css`. It
+previously had no matching Tailwind theme token at all, so every usage was
+silently falling back to the page's default Arial. A new `.font-headline`
+class (`--font-headline: "Fraunces Variable", Georgia, serif`) was added
+alongside it rather than repurposing `.font-display`, since a handful of
+its usages are small UI text where a serif would look cramped.
+
+14 large hero/section headlines were migrated to `.font-headline`: the
+homepage hero, the About page's two section headings, the FAQ/Shop/
+Wishlist page heroes, all four legal pages plus Contact (identical hero
+pattern), the "You might also like" related-products heading, the
+trending/product section heading, and the giant decorative background
+numeral in the category showcase.
+
+Four usages were deliberately kept on `.font-display` (sans): the shop and
+wishlist empty-state messages ("No stickers found.", "Your hive is
+empty.") and the cart drawer title ("Your Hive") are small/secondary UI
+text, not marketing headlines; the animated brand-reveal component that
+letters out "StickHive" one character at a time was kept sans regardless
+of its size, since it's the logo/wordmark treatment itself rather than
+page content.
