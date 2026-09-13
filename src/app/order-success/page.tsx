@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useEffect,
   useState,
 } from "react";
@@ -22,6 +23,7 @@ import {
   Phone,
   Mail,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 
 import {
@@ -57,7 +59,8 @@ type OrderStatus =
   | "processing"
   | "packed"
   | "shipped"
-  | "delivered";
+  | "delivered"
+  | "cancelled";
 
 
 type OrderItem = {
@@ -115,6 +118,18 @@ type StoredOrder = {
     amount: number;
     transactionReference: string;
     uri: string;
+  };
+
+  paymentVerification?: {
+    transactionId: string;
+    utr?: string;
+    payerUpiId?: string;
+    payerName?: string;
+    paidAmount: number;
+    paidAt: string;
+    verifiedAt: string;
+    verifiedBy: string;
+    note?: string;
   };
 
   items: OrderItem[];
@@ -296,7 +311,7 @@ function getInvoiceAddress(
 // ORDER SUCCESS PAGE
 // ============================================================================
 
-export default function OrderSuccessPage() {
+function OrderSuccessContent() {
 
   const searchParams =
     useSearchParams();
@@ -1663,5 +1678,14 @@ export default function OrderSuccessPage() {
       </div>
 
     </main>
+  );
+}
+
+
+export default function OrderSuccessPage() {
+  return (
+    <Suspense fallback={null}>
+      <OrderSuccessContent />
+    </Suspense>
   );
 }

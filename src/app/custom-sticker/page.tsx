@@ -2,6 +2,10 @@
 
 
 import {
+  Suspense,
+} from "react";
+
+import {
   useSearchParams,
 } from "next/navigation";
 
@@ -14,10 +18,7 @@ const StickerBuilder = dynamic(
 );
 
 
-
-
-
-export default function CustomStickerPage(){
+function CustomStickerContent(){
 
 
 
@@ -66,4 +67,14 @@ export default function CustomStickerPage(){
   );
 
 
+}
+
+
+export default function CustomStickerPage(){
+
+  return (
+    <Suspense fallback={null}>
+      <CustomStickerContent />
+    </Suspense>
+  );
 }

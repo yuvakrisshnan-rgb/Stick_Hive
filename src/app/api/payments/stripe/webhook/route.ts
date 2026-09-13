@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
-import { verifyStripeWebhook } from "../../../../../backend/payments/stripe";
-import { setStripePaymentState } from "../../../../../backend/orders/service";
+import { verifyStripeWebhook } from "../../../../../../backend/payments/stripe";
+import { setStripePaymentState } from "../../../../../../backend/orders/service";
 
 export const runtime = "nodejs";
 

@@ -77,6 +77,12 @@ export type OrderDocument = {
     verifiedBy: string;
     note?: string;
   };
+  paymentProof?: {
+    objectKey: string;
+    contentType: string;
+    fileName: string;
+    uploadedAt: Date;
+  };
   customer: CheckoutCustomer;
   items: Array<{
     type: "product" | "custom";
@@ -603,6 +609,9 @@ function serializeOrder(order: OrderDocument) {
     paymentExpiresAt: order.paymentExpiresAt?.toISOString(),
     paymentVerification: order.paymentVerification
       ? { ...order.paymentVerification, paidAt: order.paymentVerification.paidAt.toISOString(), verifiedAt: order.paymentVerification.verifiedAt.toISOString() }
+      : undefined,
+    paymentProof: order.paymentProof
+      ? { ...order.paymentProof, uploadedAt: order.paymentProof.uploadedAt.toISOString() }
       : undefined,
     customer: order.customer,
     items: order.items,

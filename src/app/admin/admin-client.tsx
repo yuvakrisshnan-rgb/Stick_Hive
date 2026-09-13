@@ -28,6 +28,7 @@ type OrderItem = {
   size?: string;
   shape?: string;
   finish?: string;
+  lineTotal?: number;
 };
 
 type Order = {

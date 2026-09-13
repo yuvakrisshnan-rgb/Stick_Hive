@@ -332,3 +332,120 @@ log after major confirmed changes.
 You are continuing an existing project, not starting a new generic
 website. Preserve continuity. The actual repository is the final source
 of truth.
+---
+
+## Session Update — Security & Bug Audit (Claude Chat, this session)
+
+### Context
+A full codebase audit was performed on the `rebuild-commerce` branch after
+merging in a friend's (vishal-dev) backend work — MongoDB auth/sessions,
+Stripe, S3 storage, admin panel, Delhivery shipping integration.
+
+### 🔴 Critical bugs found and FIXED locally (not yet committed/pushed as of
+this write-up — verify with `git status` / `git log` before assuming done)
+
+1. **Broken relative import paths** in three Stripe payment routes — they
+   were one folder deeper than sibling routes but still used the shallower
+   `../../../../../backend/...` (5 levels) instead of the required 6:
+   - `src/app/api/payments/stripe/webhook/route.ts`
+   - `src/app/api/payments/stripe/checkout/route.ts`
+   - `src/app/api/payments/stripe/status/route.ts`
+   Fix applied: added one more `../` to every `backend/` import in each file.
+
+2. **Wrong function name imported** in
+   `src/app/api/admin/orders/[orderId]/payment-proof/route.ts` — imported
+   `createPaymentProofUrl`, which doesn't exist. The real export in
+   `backend/storage/downloads.ts` is `createArtworkDownloadUrl`.
+   Fix applied: renamed the import to match the real export.
+
+3. **Other real type errors found via `npx tsc --noEmit`** (may still need
+   fixing — check current state):
+   - `src/app/admin/admin-client.tsx:421` — `lineTotal` doesn't exist on
+     `OrderItem` type
+   - `src/app/order-success/page.tsx:259` — `"cancelled"` not comparable to
+     `OrderStatus`
+   - `src/app/order-success/page.tsx:738` — `paymentVerification` doesn't
+     exist on `StoredOrder`
+   - `src/app/order-success/page.tsx:911` — `Loader2` used but not imported
+   - `src/app/shop/page.tsx:26` — `searchQuery` prop doesn't exist on the
+     target component (pre-existing, unrelated to the merge)
+
+   These suggest the order/payment data model was refactored (renamed
+   fields to `upiPayment`/`paymentVerification`) without updating every
+   consumer to match.
+
+### 🟠 Dependency vulnerabilities (`npm audit`, run again to check current
+state after any `npm install`)
+
+| Package | Severity | Fix |
+|---|---|---|
+| `next` (16.0.0–16.3.2) | Critical — unauthenticated RCE (Windows-hosted servers; AVIF image optimization) | `npm install next@16.3.4` |
+| `jspdf` (≤4.2.0, used by invoice generator) | Critical — path traversal, PDF/JS injection, DoS | `npm install jspdf@4.2.1` (semver-major, re-check `src/lib/invoice-generator.ts` after) |
+| `sharp` (<0.35.4) | High — libheif CVEs | `npm audit fix` |
+| `js-yaml` (transitive via google-auth-library) | High — CPU exhaustion | `npm audit fix` |
+| `uuid` / `gaxios` (transitive) | Moderate | `npm audit fix` |
+
+### 🟡 Hardening gaps (not broken, but not yet addressed)
+
+- **No security headers configured** — `next.config.ts` is still the
+  default empty config. No CSP, `X-Frame-Options`, `X-Content-Type-Options`,
+  `Strict-Transport-Security`.
+- **No `middleware.ts`** and **no IP-based rate limiting** anywhere — only
+  a per-email OTP cooldown exists. An attacker could still spam
+  `/api/auth/send-otp` with many different fake emails to burn Resend
+  quota, since nothing throttles by IP.
+
+### ✅ What's already solid (confirmed via manual code review, keep as-is)
+
+- No secrets ever committed to git history (`.env.example` only,
+  `.gitignore` correctly covers `.env*`).
+- Real session auth: OTP codes + session tokens are SHA-256 hashed before
+  storage, sessions expire server-side, cookies are `httpOnly` + `secure`
+  (prod) + `sameSite: lax`.
+- Admin access requires a real server-side check (session → email
+  allowlist via `STICKHIVE_ADMIN_EMAILS`) — the hashed admin URL path is
+  explicitly NOT the security boundary (see `backend/auth/admin-path.ts`
+  comment).
+- No price tampering possible — checkout only sends
+  `productId`/`size`/`quantity`; server always computes price via
+  `priceFor()`.
+- IDOR-protected orders — `getMyOrder()` filters by
+  `{ orderId, userId }`, not `orderId` alone.
+- Zod validation on every API route checked, including blocking
+  NoSQL-injection-style payloads (`{$ne: null}`) via `z.string()` type
+  checks.
+- Stripe webhook signature verification correctly uses the official SDK.
+- No `dangerouslySetInnerHTML`, no `eval`, no hardcoded API keys anywhere.
+
+### Playwright E2E test suite (added this session, not yet fully green)
+
+Location: `tests/e2e/*.spec.ts`, config at `playwright.config.ts`.
+Run with `npm run test:e2e:ui` (needs dev server running separately on
+port 3000 first: `npm run dev`).
+
+Files:
+- `public-pages.spec.ts` — homepage, about, shop, legal pages, 404
+- `cart-checkout.spec.ts` — add to cart, cart persistence, checkout
+  validation (PIN auto-fill, email-verification gating)
+- `custom-sticker.spec.ts` — canvas loads, add text/undo-redo, upload
+  size/type rejection
+- `api-security.spec.ts` — hits API routes directly: admin 401 checks,
+  IDOR checks, NoSQL-injection payload rejection, Stripe webhook signature
+  rejection, upload-url server-side limit enforcement
+
+Known issue hit during the last run: a request to
+`GET /api/admin/orders/[orderId]` (a route that only exports `PATCH`, no
+`GET`) hung for the full 30s test timeout instead of failing fast — this
+coincided with Turbopack being stuck on the fatal Stripe import errors
+above. Re-run the full suite after confirming `npm run dev` starts clean
+with zero build errors, since that may resolve on its own.
+
+### Recommended next steps, in order
+1. Confirm `npm run dev` / `npm run build` are both 100% clean (zero
+   errors) after the fixes above.
+2. Re-run `npm audit` and apply the `next`/`jspdf` version bumps.
+3. Re-run the full Playwright suite (`npm run test:e2e:ui`) and triage any
+   remaining failures.
+4. Add `headers()` to `next.config.ts` for basic security headers.
+5. Add basic IP-based rate limiting in front of `send-otp`/`verify-otp`/
+   `upload-url` (a `middleware.ts` is the natural place for this).
