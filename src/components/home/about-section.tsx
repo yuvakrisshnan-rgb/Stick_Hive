@@ -283,7 +283,7 @@ export default function AboutSection() {
 
           <h2
             className="
-              font-display
+              font-headline
               text-5xl
               font-extrabold
               leading-[0.95]
@@ -737,7 +737,7 @@ export default function AboutSection() {
           <h3
             className="
               relative
-              font-display
+              font-headline
               text-4xl
               font-extrabold
               tracking-tight

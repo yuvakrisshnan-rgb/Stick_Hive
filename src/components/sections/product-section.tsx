@@ -111,7 +111,7 @@ export default function ProductSection() {
 
           <h2
             className="
-              font-display
+              font-headline
               text-5xl
               font-extrabold
               tracking-tight

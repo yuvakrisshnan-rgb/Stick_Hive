@@ -546,7 +546,7 @@ export default function ShopCatalog() {
             <h1
               className="
                 mt-6
-                font-display
+                font-headline
                 text-5xl
                 font-extrabold
                 leading-[0.95]

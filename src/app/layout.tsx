@@ -4,6 +4,7 @@ import type {
 } from "next"
 
 import "@fontsource-variable/inter";
+import "@fontsource-variable/fraunces";
 import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/600.css";
 import "@fontsource/space-grotesk/700.css";

@@ -501,7 +501,7 @@ function CategoryScene({
               -right-5
               -top-20
               select-none
-              font-display
+              font-headline
               text-[220px]
               font-black
               leading-none

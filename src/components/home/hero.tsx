@@ -157,7 +157,7 @@ export default function Hero() {
               ease: "easeOut",
             }}
             className="
-              font-display
+              font-headline
               text-6xl
               font-extrabold
               leading-[1]

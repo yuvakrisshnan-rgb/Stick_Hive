@@ -41,6 +41,13 @@
 
 @theme inline {
 
+  --font-display:
+    "Space Grotesk", Arial, sans-serif;
+
+  --font-headline:
+    "Fraunces Variable", Georgia, serif;
+
+
   --color-background:
     var(--background);
 

@@ -250,7 +250,7 @@ export default function FAQPage() {
 
           <h1
             className="
-              font-display
+              font-headline
               text-5xl
               font-extrabold
               leading-[0.95]

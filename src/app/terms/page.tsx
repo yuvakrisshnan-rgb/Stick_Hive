@@ -259,7 +259,7 @@ export default function TermsPage() {
           <h1
             className="
               max-w-4xl
-              font-display
+              font-headline
               text-5xl
               font-extrabold
               leading-[0.95]

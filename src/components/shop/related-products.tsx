@@ -239,7 +239,7 @@ export default function RelatedProducts({
           <h2
             className="
               mt-3
-              font-display
+              font-headline
               text-3xl
               font-extrabold
               tracking-tight

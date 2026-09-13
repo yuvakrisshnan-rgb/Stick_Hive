@@ -284,7 +284,7 @@ export default function PrivacyPage() {
           <h1
             className="
               max-w-4xl
-              font-display
+              font-headline
               text-5xl
               font-extrabold
               leading-[0.95]
