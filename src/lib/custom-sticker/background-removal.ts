@@ -1,5 +1,66 @@
 // ============================================================================
-// LIGHTWEIGHT LOCAL BACKGROUND REMOVAL
+// BACKGROUND REMOVAL
+// ============================================================================
+//
+// Two implementations live in this file:
+//
+//   - removeBackgroundML: real ML segmentation via @imgly/background-removal
+//     (in-browser WebAssembly, no server round-trip). Used automatically
+//     right after upload, before die-cut contour detection runs, so most
+//     photos get a real silhouette instead of a rectangular fallback.
+//
+//   - removeSimpleBackground: the original dependency-free flood-fill
+//     approach (removes background-colored pixels connected to the image
+//     edges). Kept as-is for the manual per-layer "Remove Background"
+//     button, which predates the ML integration.
+// ============================================================================
+
+// --------------------------------------------------------------------------
+// ML BACKGROUND REMOVAL (@imgly/background-removal)
+// --------------------------------------------------------------------------
+
+/**
+ * Removes the background from an image using an in-browser ML segmentation
+ * model (WebAssembly, runs entirely client-side — no upload to a server).
+ *
+ * The "isnet_quint8" model is the smallest/quantized variant to keep the
+ * one-time model download closer to the low end of the ~10-80MB range.
+ * The browser caches the model after first use, so this cost is paid once
+ * per device, not per upload.
+ *
+ * @param source - a data URL, object URL, or remote URL for the image.
+ * @param onProgress - optional callback, fraction 0-1, for a loading UI.
+ *   Fires for both the (first-time) model download and inference.
+ * @returns a PNG data URL with the background made transparent.
+ * @throws if the model fails to load or segmentation fails (e.g. no WASM
+ *   support, blocked network request to the model CDN) — callers should
+ *   catch this and fall back to using the original image unchanged, since
+ *   this is a "nice to have" enhancement, not a required step.
+ */
+export async function removeBackgroundML(
+  source: string,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  const { removeBackground } = await import("@imgly/background-removal");
+
+  const resultBlob = await removeBackground(source, {
+    model: "isnet_quint8",
+    output: { format: "image/png" },
+    progress: (_key, current, total) => {
+      if (total > 0) onProgress?.(Math.min(1, current / total));
+    },
+  });
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Unable to read background-removed image"));
+    reader.readAsDataURL(resultBlob);
+  });
+}
+
+// ============================================================================
+// LIGHTWEIGHT LOCAL BACKGROUND REMOVAL (fallback / manual button)
 // ============================================================================
 //
 // This is intentionally dependency-free and browser-only. It removes an

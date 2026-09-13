@@ -25,7 +25,7 @@ import {
 } from "./sticker-canvas";
 
 import { detectImageContour } from "@/lib/custom-sticker/contour";
-import { removeSimpleBackground } from "@/lib/custom-sticker/background-removal";
+import { removeSimpleBackground, removeBackgroundML } from "@/lib/custom-sticker/background-removal";
 import { DEFAULT_STICKER_FONT } from "@/lib/custom-sticker/fonts";
 
 import {
@@ -293,6 +293,9 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
 
   const [uploadError, setUploadError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatusMessage, setUploadStatusMessage] = useState(
+    "Preparing image…",
+  );
   const [detectingContourLayerId, setDetectingContourLayerId] = useState<
     string | null
   >(null);
@@ -337,6 +340,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
 
     try {
       setIsUploading(true);
+      setUploadStatusMessage("Preparing image…");
 
       const base64Image = await fileToBase64(file);
       const dimensions = await loadImageDimensions(base64Image);
@@ -350,6 +354,33 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
       const displayWidth = Math.round(dimensions.width * scale);
       const displayHeight = Math.round(dimensions.height * scale);
 
+      // Automatically remove the background so the die-cut contour tracer
+      // (detectImageContour) gets a real silhouette to trace instead of a
+      // rectangular fallback. This is a "nice to have" step — if the model
+      // fails to load or segmentation errors out, fall back to the
+      // original upload untouched rather than blocking the user.
+      let processedImage = base64Image;
+      let autoBackgroundRemoved = false;
+
+      try {
+        setUploadStatusMessage("Removing background…");
+
+        processedImage = await removeBackgroundML(base64Image, (fraction) => {
+          setUploadStatusMessage(
+            `Removing background… ${Math.round(fraction * 100)}%`,
+          );
+        });
+
+        autoBackgroundRemoved = true;
+      } catch (backgroundRemovalError) {
+        console.warn(
+          "Automatic background removal failed, using original image:",
+          backgroundRemovalError,
+        );
+      }
+
+      setUploadStatusMessage("Detecting outline…");
+
       const mode = uploadModeRef.current;
 
       if (mode.type === "replace") {
@@ -359,38 +390,38 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
               layer.id === mode.layerId && layer.type === "image"
                 ? {
                     ...layer,
-                    src: base64Image,
+                    src: processedImage,
                     width: displayWidth,
                     height: displayHeight,
                     contourPoints: null,
-                    originalSrc: undefined,
-                    backgroundRemoved: false,
+                    originalSrc: autoBackgroundRemoved ? base64Image : undefined,
+                    backgroundRemoved: autoBackgroundRemoved,
                   }
                 : layer,
             ),
           true,
         );
 
-        detectContourForLayer(mode.layerId, base64Image);
+        detectContourForLayer(mode.layerId, processedImage);
       } else {
         const newLayer: StickerImageLayer = {
           id: createId(),
           type: "image",
-          src: base64Image,
+          src: processedImage,
           x: CANVAS_MARGIN + PRINT_AREA_SIZE / 2 - displayWidth / 2,
           y: CANVAS_MARGIN + PRINT_AREA_SIZE / 2 - displayHeight / 2,
           width: displayWidth,
           height: displayHeight,
           rotation: 0,
           contourPoints: null,
-          originalSrc: undefined,
-          backgroundRemoved: false,
+          originalSrc: autoBackgroundRemoved ? base64Image : undefined,
+          backgroundRemoved: autoBackgroundRemoved,
         };
 
         applyLayers((previous) => [...previous, newLayer], true);
         setSelectedLayerId(newLayer.id);
 
-        detectContourForLayer(newLayer.id, base64Image);
+        detectContourForLayer(newLayer.id, processedImage);
       }
     } catch (error) {
       setUploadError("Unable to process image.");
@@ -859,7 +890,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
 
             {isUploading && (
               <p className="mt-4 text-center text-xs font-semibold text-black/40">
-                Preparing image…
+                {uploadStatusMessage}
               </p>
             )}
           </>
