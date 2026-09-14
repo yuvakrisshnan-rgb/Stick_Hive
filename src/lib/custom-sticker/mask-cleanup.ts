@@ -150,6 +150,176 @@ export function fillSmallHoles(
   return mask;
 }
 
+// ============================================================================
+// MORPHOLOGICAL CLOSING (dilate then erode) — for THIN, WINDING gaps
+// ============================================================================
+//
+// findEnclosedHoles/fillSmallHoles only catch holes that are fully sealed
+// off from the exterior. In practice, ML matting artifacts on real photos
+// (hair strands, fabric wrinkles) are often not sealed pockets at all —
+// they're a scattered web of thin (1-3px) interconnected transparent
+// channels that happen to have some thin winding path back to the true
+// background. By findEnclosedHoles's own (correct) definition, those are
+// "exterior," so fillSmallHoles correctly leaves them alone — which is
+// exactly why it doesn't fix this case on its own.
+//
+// A real morphological closing bridges those thin channels: dilate grows
+// every opaque region outward by `radius`, which swallows any gap
+// narrower than ~2x radius (severing its path back to the true exterior);
+// erode then shrinks the boundary back down by the same radius, undoing
+// dilation's outward growth everywhere EXCEPT inside a gap that just got
+// sealed off, since that region is now surrounded by opaque pixels on all
+// sides within `radius` and has no transparent neighbor left to erode
+// through. The true outer silhouette returns to very close to its
+// original position — "very close," not exact, is the real tradeoff:
+// fine convex detail (a thin hair strand, a narrow protrusion) can soften
+// or round off slightly if it's roughly `radius`-scale itself.
+//
+// A large legitimate transparent region (an arm-to-body gap, a shape with
+// a deliberate hole) survives fine UNLESS it happens to be narrower than
+// ~2x radius — at a small radius (2-3px) that only affects genuinely
+// tiny/thin design gaps, but it's a real, documented limitation of this
+// technique, not just of this implementation.
+//
+// Implemented as a SQUARE (not disk) structuring element specifically
+// because a box is exactly separable into a horizontal pass + a vertical
+// pass — each O(width*height) via a sliding window, independent of
+// radius — rather than the O(width*height*radius^2) a disk kernel would
+// need checked pixel-by-pixel. At radius 2-3 the visual difference between
+// a square and a disk is negligible; the performance difference matters a
+// lot on a several-megapixel photo.
+
+function boxDilate(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  if (radius <= 0) return mask.slice();
+
+  const temp = new Uint8Array(width * height);
+  const result = new Uint8Array(width * height);
+
+  // Horizontal pass: pixel becomes opaque if ANY pixel within `radius`
+  // pixels left/right is opaque.
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let count = 0;
+    for (let x = 0; x <= Math.min(radius, width - 1); x++) {
+      if (mask[row + x] === 1) count++;
+    }
+    for (let x = 0; x < width; x++) {
+      temp[row + x] = count > 0 ? 1 : 0;
+      const removeIdx = x - radius;
+      const addIdx = x + radius + 1;
+      if (removeIdx >= 0 && mask[row + removeIdx] === 1) count--;
+      if (addIdx < width && mask[row + addIdx] === 1) count++;
+    }
+  }
+
+  // Vertical pass on the horizontal result — together these compute the
+  // exact 2D box dilation (a box structuring element is separable).
+  for (let x = 0; x < width; x++) {
+    let count = 0;
+    for (let y = 0; y <= Math.min(radius, height - 1); y++) {
+      if (temp[y * width + x] === 1) count++;
+    }
+    for (let y = 0; y < height; y++) {
+      result[y * width + x] = count > 0 ? 1 : 0;
+      const removeIdx = y - radius;
+      const addIdx = y + radius + 1;
+      if (removeIdx >= 0 && temp[removeIdx * width + x] === 1) count--;
+      if (addIdx < height && temp[addIdx * width + x] === 1) count++;
+    }
+  }
+
+  return result;
+}
+
+function boxErode(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  if (radius <= 0) return mask.slice();
+
+  const temp = new Uint8Array(width * height);
+  const result = new Uint8Array(width * height);
+
+  // Horizontal pass: pixel stays opaque only if EVERY pixel within
+  // `radius` left/right is opaque (tracked as: zero transparent pixels
+  // in the window).
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let transparentCount = 0;
+    for (let x = 0; x <= Math.min(radius, width - 1); x++) {
+      if (mask[row + x] === 0) transparentCount++;
+    }
+    for (let x = 0; x < width; x++) {
+      temp[row + x] = transparentCount === 0 ? 1 : 0;
+      const removeIdx = x - radius;
+      const addIdx = x + radius + 1;
+      if (removeIdx >= 0 && mask[row + removeIdx] === 0) transparentCount--;
+      if (addIdx < width && mask[row + addIdx] === 0) transparentCount++;
+    }
+  }
+
+  for (let x = 0; x < width; x++) {
+    let transparentCount = 0;
+    for (let y = 0; y <= Math.min(radius, height - 1); y++) {
+      if (temp[y * width + x] === 0) transparentCount++;
+    }
+    for (let y = 0; y < height; y++) {
+      result[y * width + x] = transparentCount === 0 ? 1 : 0;
+      const removeIdx = y - radius;
+      const addIdx = y + radius + 1;
+      if (removeIdx >= 0 && temp[removeIdx * width + x] === 0) transparentCount--;
+      if (addIdx < height && temp[addIdx * width + x] === 0) transparentCount++;
+    }
+  }
+
+  return result;
+}
+
+// Starting default per the request: small enough to keep fine detail
+// (hair strands, narrow protrusions) close to intact, large enough to
+// bridge the thin (1-3px) winding gaps seen in real ML matting artifacts.
+// Bridges gaps up to ~2x this value; raise toward 3 if real-world testing
+// shows gaps wider than that still surviving. Tuned at an 800px working
+// resolution — see computeMorphologicalCloseRadius for why the radius
+// actually used at other resolutions is scaled, not this fixed number
+// directly.
+export const MORPHOLOGICAL_CLOSE_RADIUS = 2;
+
+// The resolution MORPHOLOGICAL_CLOSE_RADIUS above was tuned at (matches
+// contour.ts's CONTOUR_MAX_DIMENSION, where the mask is always downscaled
+// to ~this size before tracing).
+const CLOSE_RADIUS_REFERENCE_DIMENSION = 800;
+
+/**
+ * Scales MORPHOLOGICAL_CLOSE_RADIUS proportionally to the mask's actual
+ * largest dimension, so the same base radius bridges the same real-world
+ * gap width regardless of what resolution a caller processes at (today
+ * that's just contour.ts's ~800px tracing mask, where this is a no-op
+ * since 800 is the reference size itself).
+ */
+export function computeMorphologicalCloseRadius(width: number, height: number): number {
+  const scale = Math.max(width, height) / CLOSE_RADIUS_REFERENCE_DIMENSION;
+  return Math.max(1, Math.round(MORPHOLOGICAL_CLOSE_RADIUS * scale));
+}
+
+/**
+ * Real morphological closing (dilate then erode, same radius) on a binary
+ * mask. Bridges thin transparent channels/gaps up to ~2x `radius` wide
+ * that findEnclosedHoles/fillSmallHoles can't touch because they have some
+ * winding path back to the exterior. The true outer boundary returns to
+ * very close to its original position, EXCEPT a legitimate gap narrower
+ * than ~2x radius, which gets closed the same as an artifact would —
+ * documented limitation, not a bug. Mutates and returns `mask`.
+ */
+export function morphologicalClose(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  radius: number,
+): Uint8Array {
+  const dilated = boxDilate(mask, width, height, radius);
+  const closed = boxErode(dilated, width, height, radius);
+  mask.set(closed);
+  return mask;
+}
+
 // Structural type instead of the DOM `ImageData` — keeps this module free
 // of DOM-only type dependencies (it does no canvas/DOM work itself), and a
 // real ImageData already satisfies this shape.
@@ -222,3 +392,4 @@ export function closeSmallHolesInImageData(
     }
   }
 }
+

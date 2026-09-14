@@ -19,7 +19,12 @@
 // and the caller should fall back to a bounding-shape approximation.
 // ============================================================================
 
-import { DEFAULT_MAX_HOLE_AREA_FRACTION, fillSmallHoles } from "./mask-cleanup";
+import {
+  DEFAULT_MAX_HOLE_AREA_FRACTION,
+  fillSmallHoles,
+  morphologicalClose,
+  computeMorphologicalCloseRadius,
+} from "./mask-cleanup";
 
 export type ContourPoint = { x: number; y: number };
 
@@ -98,6 +103,15 @@ function buildAlphaMask(
   // because it's either connected to the border or too large.
   const maxHoleArea = Math.round(width * height * DEFAULT_MAX_HOLE_AREA_FRACTION);
   fillSmallHoles(mask, width, height, maxHoleArea);
+
+  // fillSmallHoles only catches holes fully sealed off from the exterior.
+  // Real matting artifacts (hair strands, fabric wrinkles) are often a web
+  // of thin channels that have some winding path back to the true
+  // background instead, which fillSmallHoles correctly leaves alone.
+  // Morphological closing bridges those thin channels directly, at the
+  // cost of very slightly softening fine convex detail near the true
+  // boundary — see mask-cleanup.ts for the full tradeoff.
+  morphologicalClose(mask, width, height, computeMorphologicalCloseRadius(width, height));
 
   let transparentCount = 0;
   for (let i = 0; i < width * height; i++) {
