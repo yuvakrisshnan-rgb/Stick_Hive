@@ -488,6 +488,47 @@ page content.
 
 ## Next feature: automatic background removal for custom stickers
 
+### Status (as of this write-up): paused, partially shipped
+
+- ✅ **Shipped and confirmed working**: automatic background removal
+  (`removeBackgroundML`) runs on upload before contour detection, and the
+  die-cut **outline/contour tracing** is fixed — see "Die-cut contour
+  tuning" and "Bridge thin winding matting gaps" sessions below. Verified
+  on a real portrait photo: the traced outline went from looping through
+  the middle of the subject to a single clean line hugging the
+  silhouette. Net measured precision improvement: 2.77x tighter (see
+  below).
+- 🔴 **Not resolved, paused**: the *visible artwork color* in
+  bridged/filled areas (the actual sticker image the customer sees and
+  prints — not just the traced outline) washes out toward white on photos
+  with fine hair detail and textured clothing. The outline fix works by
+  bridging thin gaps in an abstract tracing mask, which doesn't touch
+  pixel colors at all; a separate attempt to apply the same bridging to
+  the real image data (`closeSmallGapsInImageData`) hit a real,
+  confirmed root cause (nearest-neighbor color propagation was picking up
+  color-contaminated soft/anti-aliased edge pixels near the bridged gap,
+  not fully-transparent ones) and a fix was implemented and passed
+  synthetic tests, but did **not** fully resolve the issue on a real test
+  photo after a further iteration, and was deliberately **not shipped** —
+  reverted out of the codebase rather than left half-working. The manual
+  per-layer "Remove Background" button (`removeSimpleBackground`) is
+  unaffected by any of this and still works as it did before this
+  feature existed.
+- **Next things to try, in order, whenever this is picked back up**:
+  1. Try a different/larger `@imgly/background-removal` model variant
+     (currently `isnet_quint8`, the smallest/quantized one, chosen to
+     minimize download size) — a higher-quality model may produce
+     cleaner alpha mattes with less of the soft-edge contamination that's
+     driving the color-washing bug, reducing how often the bridging logic
+     needs to run at all.
+  2. If that doesn't fully resolve it, accept the color-washing on
+     fine-hair/textured photos as a known limitation of automatic removal
+     for now, and lean on the existing "Restore Original" mechanism
+     (`originalSrc`/`backgroundRemoved` on image layers, already wired
+     up) — i.e. let users revert to their unprocessed upload when the
+     automatic result looks wrong, rather than trying to perfect the
+     automatic cleanup further.
+
 ### Goal
 
 Add client-side ML background removal as a new automatic step in the
