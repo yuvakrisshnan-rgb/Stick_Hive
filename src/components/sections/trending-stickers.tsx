@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 
-import { motion } from "motion/react";
+import { motion, useInView } from "motion/react";
 import { Plus } from "lucide-react";
 
 import {
@@ -113,6 +113,18 @@ export default function TrendingStickers() {
 
 
   /* ----------------------------------------------------------------------- */
+  /* VISIBILITY (pause the auto-scroll loop and card float animations while */
+  /* this section is scrolled off-screen, instead of running them forever) */
+  /* ----------------------------------------------------------------------- */
+
+  const isSectionInView =
+    useInView(
+      viewportRef,
+      { amount: 0.1 },
+    );
+
+
+  /* ----------------------------------------------------------------------- */
   /* DRAG STATE                                                              */
   /* ----------------------------------------------------------------------- */
 
@@ -155,6 +167,20 @@ export default function TrendingStickers() {
     }
 
 
+    /*
+     * Don't even start the loop while the section is
+     * scrolled off-screen — this was previously running
+     * forever, mutating scrollLeft every frame, regardless
+     * of whether the user could see it.
+     */
+
+    if (
+      !isSectionInView
+    ) {
+      return;
+    }
+
+
     const prefersReducedMotion =
       window.matchMedia(
         "(prefers-reduced-motion: reduce)",
@@ -174,6 +200,31 @@ export default function TrendingStickers() {
 
     let lastTime =
       performance.now();
+
+
+    /*
+     * scrollWidth forces a layout read — cache it instead
+     * of reading it on every single frame. It only changes
+     * if the window resizes (the track's own content is
+     * static once mounted).
+     */
+
+    let halfWidth =
+      viewport.scrollWidth / 2;
+
+
+    const updateHalfWidth = () => {
+
+      halfWidth =
+        viewport.scrollWidth / 2;
+
+    };
+
+
+    window.addEventListener(
+      "resize",
+      updateHalfWidth,
+    );
 
 
     const animate = (
@@ -214,10 +265,6 @@ export default function TrendingStickers() {
          * create the seamless loop.
          */
 
-        const halfWidth =
-          viewport.scrollWidth / 2;
-
-
         if (
           viewport.scrollLeft >=
           halfWidth
@@ -251,10 +298,17 @@ export default function TrendingStickers() {
         animationFrame,
       );
 
+
+      window.removeEventListener(
+        "resize",
+        updateHalfWidth,
+      );
+
     };
 
   }, [
     isHovered,
+    isSectionInView,
   ]);
 
 
@@ -602,6 +656,9 @@ export default function TrendingStickers() {
                   onAdd={
                     handleAdd
                   }
+                  isInView={
+                    isSectionInView
+                  }
                 />
 
               ),
@@ -639,6 +696,9 @@ export default function TrendingStickers() {
                   }
                   onAdd={
                     handleAdd
+                  }
+                  isInView={
+                    isSectionInView
                   }
                 />
 
@@ -687,6 +747,8 @@ type TrendingCardProps = {
     product: Product,
   ) => void;
 
+  isInView: boolean;
+
 };
 
 
@@ -694,6 +756,7 @@ function TrendingCard({
   product,
   index,
   onAdd,
+  isInView,
 }: TrendingCardProps) {
 
   const pricing =
@@ -742,15 +805,19 @@ function TrendingCard({
     >
 
       <motion.div
-        animate={{
-          y: [
-            0,
-            -7,
-            0,
-            6,
-            0,
-          ],
-        }}
+        animate={
+          isInView
+            ? {
+                y: [
+                  0,
+                  -7,
+                  0,
+                  6,
+                  0,
+                ],
+              }
+            : undefined
+        }
         transition={{
           duration: 4.2,
           repeat: Infinity,
