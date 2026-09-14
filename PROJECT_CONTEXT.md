@@ -622,3 +622,16 @@ issue. Fixing the multi-region case would need connected-component
 labeling and a decision on how to combine regions (trace only the
 largest, or produce a compound path) — a real follow-up, but out of
 scope for the parameter tuning done here.
+
+---
+
+## Known placeholder state: broken product image paths
+
+Product images (currently 27 broken static paths in `product-data.ts`
+pointing to non-existent files under `public/stickers/`) are
+intentionally left as-is for now. Products will eventually move to a
+database-backed model with real image URLs (likely S3-hosted, same
+pattern as custom sticker artwork), replacing the static
+`product-data.ts` file entirely. Don't fix the individual broken paths —
+this is a known placeholder state pending that migration, not a bug to
+chase down.
