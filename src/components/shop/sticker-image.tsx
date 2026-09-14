@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import Image from "next/image";
 import { motion, useInView } from "motion/react";
 
 import type { Product } from "@/lib/product-data";
@@ -74,22 +75,36 @@ w-full
 product.image ?
 
 
-<img
+<div
+
+className="
+relative
+h-[75%]
+w-[75%]
+drop-shadow-[0_15px_15px_rgba(0,0,0,0.2)]
+"
+
+>
+
+<Image
 
 src={product.image}
 
 alt={product.name}
 
+fill
+
+sizes="(max-width: 768px) 50vw, 300px"
+
 className="
-h-[75%]
-w-[75%]
 object-contain
-drop-shadow-[0_15px_15px_rgba(0,0,0,0.2)]
 "
 
 draggable={false}
 
 />
+
+</div>
 
 
 :

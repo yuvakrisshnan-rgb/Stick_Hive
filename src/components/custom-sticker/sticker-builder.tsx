@@ -633,12 +633,25 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   }
 
   // --------------------------------------------------------------------------
-  // THUMBNAIL GENERATION (flattened snapshot for cart/receipt display)
+  // THUMBNAIL GENERATION
   // --------------------------------------------------------------------------
+  // Generates two separate exports from the same canvas snapshot:
+  //   - printUrl: full resolution (pixelRatio 2, ~840x840 at the current
+  //     420px print area), uploaded to storage as the actual production
+  //     artwork via uploadArtworkToStorage(). Print quality depends on this
+  //     staying high-res — never lower it for a UI concern.
+  //   - previewUrl: a much smaller export (pixelRatio 0.5, ~210x210), used
+  //     only for on-screen display (cart drawer thumbnail, ~96px box).
+  //     Previously the SAME 840x840 image was reused for both purposes,
+  //     meaning the cart thumbnail decoded ~76x more pixels than its
+  //     96x96 display size ever needed.
 
   const [showGuides, setShowGuides] = useState(true);
 
-  function generateThumbnail(): Promise<string> {
+  const THUMBNAIL_PRINT_PIXEL_RATIO = 2;
+  const THUMBNAIL_PREVIEW_PIXEL_RATIO = 0.5;
+
+  function generateThumbnails(): Promise<{ printUrl: string; previewUrl: string }> {
     return new Promise((resolve) => {
       setShowGuides(false);
 
@@ -648,25 +661,34 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
 
           if (!stage) {
             setShowGuides(true);
-            resolve("");
+            resolve({ printUrl: "", previewUrl: "" });
             return;
           }
 
           const previousScale = { x: stage.scaleX(), y: stage.scaleY() };
           stage.scale({ x: 1, y: 1 });
 
-          const dataUrl = stage.toDataURL({
+          const snapshotArea = {
             x: CANVAS_MARGIN,
             y: CANVAS_MARGIN,
             width: PRINT_AREA_SIZE,
             height: PRINT_AREA_SIZE,
-            pixelRatio: 2,
+          };
+
+          const printUrl = stage.toDataURL({
+            ...snapshotArea,
+            pixelRatio: THUMBNAIL_PRINT_PIXEL_RATIO,
+          });
+
+          const previewUrl = stage.toDataURL({
+            ...snapshotArea,
+            pixelRatio: THUMBNAIL_PREVIEW_PIXEL_RATIO,
           });
 
           stage.scale(previousScale);
 
           setShowGuides(true);
-          resolve(dataUrl);
+          resolve({ printUrl, previewUrl });
         });
       });
     });
@@ -719,12 +741,12 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
     setIsUploading(true);
 
     try {
-      const thumbnailUrl = await generateThumbnail();
-      if (!thumbnailUrl) {
+      const { printUrl, previewUrl } = await generateThumbnails();
+      if (!printUrl || !previewUrl) {
         throw new Error("Unable to generate the sticker artwork.");
       }
 
-      const artwork = await uploadArtworkToStorage(thumbnailUrl);
+      const artwork = await uploadArtworkToStorage(printUrl);
 
       const stickerData = {
         layers,
@@ -733,7 +755,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
         finish: "Matte" as CustomStickerFinish,
         quantity,
         unitPrice,
-        thumbnailUrl,
+        thumbnailUrl: previewUrl,
         artworkObjectKey: artwork.objectKey,
         artworkContentType: artwork.contentType,
       };

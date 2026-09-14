@@ -9,6 +9,7 @@ import {
 import QRCode from "qrcode";
 
 import Link from "next/link";
+import Image from "next/image";
 
 import {
   useSearchParams,
@@ -955,9 +956,11 @@ function OrderSuccessContent() {
 
               {qrDataUrl ? (
                 <div className="mx-auto mt-6 flex w-fit items-center justify-center rounded-3xl border border-black/10 bg-white p-4 shadow-sm">
-                  <img
+                  <Image
                     src={qrDataUrl}
                     alt={`UPI payment QR for ₹${currentOrder.upiPayment.amount.toFixed(2)}`}
+                    width={288}
+                    height={288}
                     className="size-64 rounded-xl md:size-72"
                   />
                 </div>

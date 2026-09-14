@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 
 
 
@@ -608,6 +609,7 @@ function CartItem({
 
         <div
           className="
+            relative
             size-24
             shrink-0
             overflow-hidden
@@ -616,15 +618,15 @@ function CartItem({
           "
         >
 
-          <img
+          <Image
             src={
               line.product.image ??
               "/placeholder-sticker.png"
             }
             alt={line.product.name}
+            fill
+            sizes="96px"
             className="
-              h-full
-              w-full
               object-cover
             "
           />
@@ -940,12 +942,12 @@ function CustomCartItem({
           `}
         >
 
-          <img
+          <Image
             src={line.thumbnailUrl}
             alt="Custom sticker"
+            fill
+            sizes="96px"
             className="
-              h-full
-              w-full
               object-contain
             "
           />
