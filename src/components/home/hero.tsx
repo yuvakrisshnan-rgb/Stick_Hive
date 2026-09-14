@@ -1,14 +1,13 @@
 "use client";
 
+import { useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Sparkles, ArrowRight } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion, useInView } from "motion/react";
 
 import Counter from "@/components/animations/counter";
 import BackgroundEffects from "@/components/animations/background-effects";
-
-import { useMousePosition } from "@/hooks/use-mouse-position";
 
 import PremiumButton from "@/components/ui/premium-button";
 
@@ -28,11 +27,10 @@ const COLLAGE_PRODUCTS = PRODUCTS.filter(
 
 
 export default function Hero() {
-  const mouse = useMousePosition();
   const shouldReduceMotion = useReducedMotion();
 
-  const moveX = shouldReduceMotion ? 0 : (mouse.x - 500) / 40;
-  const moveY = shouldReduceMotion ? 0 : (mouse.y - 400) / 40;
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const isSectionInView = useInView(sectionRef, { amount: 0.1 });
 
   const collagePositions = [
     { top: "6%", left: "8%", rotate: -10, size: "size-32 md:size-40" },
@@ -43,6 +41,7 @@ export default function Hero() {
 
   return (
     <section
+      ref={sectionRef}
       className="
         relative
         min-h-screen
@@ -56,7 +55,7 @@ export default function Hero() {
           ANIMATED BACKGROUND
       ====================================================== */}
 
-      <BackgroundEffects />
+      <BackgroundEffects isInView={isSectionInView} />
 
       {/* ======================================================
           MAIN HERO CONTAINER

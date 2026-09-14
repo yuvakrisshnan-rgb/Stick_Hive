@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "motion/react";
+import { useRef } from "react";
+import { motion, useInView } from "motion/react";
 
 import type { Product } from "@/lib/product-data";
 
@@ -13,10 +14,15 @@ export function StickerImage({
   className?:string;
 }) {
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const isInView = useInView(containerRef, { amount: 0.1 });
+
 
 return (
 
 <div
+
+ref={containerRef}
 
 className={`
 flex
@@ -37,9 +43,13 @@ backgroundColor:product.color
 
 <motion.div
 
-animate={{
+animate={
+isInView
+? {
 y:[0,-8,0]
-}}
+}
+: undefined
+}
 
 transition={{
 duration:3,

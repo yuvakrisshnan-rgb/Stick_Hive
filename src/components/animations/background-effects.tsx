@@ -3,7 +3,11 @@
 import { motion } from "motion/react";
 
 
-export default function BackgroundEffects() {
+export default function BackgroundEffects({
+  isInView,
+}: {
+  isInView: boolean;
+}) {
 
 
   return (
@@ -14,21 +18,25 @@ export default function BackgroundEffects() {
 
       <motion.div
 
-        animate={{
+        animate={
+          isInView
+            ? {
 
-          scale:[
-            1,
-            1.15,
-            1
-          ],
+                scale:[
+                  1,
+                  1.15,
+                  1
+                ],
 
-          opacity:[
-            0.35,
-            0.55,
-            0.35
-          ]
+                opacity:[
+                  0.35,
+                  0.55,
+                  0.35
+                ]
 
-        }}
+              }
+            : undefined
+        }
 
         transition={{
 
@@ -66,21 +74,25 @@ export default function BackgroundEffects() {
 
       <motion.div
 
-        animate={{
+        animate={
+          isInView
+            ? {
 
-          y:[
-            0,
-            -30,
-            0
-          ],
+                y:[
+                  0,
+                  -30,
+                  0
+                ],
 
-          rotate:[
-            0,
-            180,
-            360
-          ]
+                rotate:[
+                  0,
+                  180,
+                  360
+                ]
 
-        }}
+              }
+            : undefined
+        }
 
         transition={{
 
@@ -114,15 +126,19 @@ export default function BackgroundEffects() {
 
       <motion.div
 
-        animate={{
+        animate={
+          isInView
+            ? {
 
-          y:[
-            0,
-            40,
-            0
-          ]
+                y:[
+                  0,
+                  40,
+                  0
+                ]
 
-        }}
+              }
+            : undefined
+        }
 
         transition={{
 
@@ -156,15 +172,19 @@ export default function BackgroundEffects() {
 
       <motion.div
 
-        animate={{
+        animate={
+          isInView
+            ? {
 
-          y:[
-            0,
-            -25,
-            0
-          ]
+                y:[
+                  0,
+                  -25,
+                  0
+                ]
 
-        }}
+              }
+            : undefined
+        }
 
         transition={{
 
