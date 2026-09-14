@@ -13,6 +13,7 @@ import {
 } from "motion/react"
 
 import {
+  Check,
   ChevronDown,
   SlidersHorizontal,
   X,
@@ -755,7 +756,7 @@ export default function ShopCatalog() {
                       items-center
                       justify-center
                       rounded-full
-                      bg-ink
+                      bg-honey-orange
                       text-[10px]
                       text-white
                     "
@@ -817,69 +818,10 @@ export default function ShopCatalog() {
               </span>
 
 
-              <div
-                className="
-                  relative
-                "
-              >
-
-                <select
-                  value={sort}
-                  onChange={(event) => {
-                    setSort(
-                      event.target.value as SortOption,
-                    )
-                  }}
-                  className="
-                    h-9
-                    appearance-none
-                    rounded-full
-                    border
-                    border-black/10
-                    bg-white
-                    py-0
-                    pl-4
-                    pr-9
-                    text-xs
-                    font-bold
-                    outline-none
-                    transition
-                    hover:bg-hive-yellow
-                  "
-                >
-
-                  {SORT_OPTIONS.map(
-                    (option) => (
-
-                      <option
-                        key={
-                          option.value
-                        }
-                        value={
-                          option.value
-                        }
-                      >
-                        {option.label}
-                      </option>
-
-                    ),
-                  )}
-
-                </select>
-
-
-                <ChevronDown
-                  size={14}
-                  className="
-                    pointer-events-none
-                    absolute
-                    right-3
-                    top-1/2
-                    -translate-y-1/2
-                  "
-                />
-
-              </div>
+              <SortDropdown
+                value={sort}
+                onChange={setSort}
+              />
 
             </div>
 
@@ -1187,7 +1129,7 @@ function CategoryButton({
         transition-all
         ${
           active
-            ? "scale-105 bg-[#111111] text-white shadow-md"
+            ? "scale-105 bg-honey-orange text-white shadow-md"
             : "bg-white text-black/60 hover:bg-hive-yellow hover:text-ink"
         }
       `}
@@ -1267,13 +1209,291 @@ function FilterPill({
         transition
         ${
           active
-            ? "border-ink bg-ink text-white"
+            ? "border-honey-orange bg-honey-orange text-white"
             : "border-black/10 bg-white text-black/55 hover:border-hive-yellow hover:bg-hive-yellow hover:text-ink"
         }
       `}
     >
       {children}
     </button>
+
+  )
+
+}
+
+
+// ============================================================================
+// SORT DROPDOWN
+// ============================================================================
+// A custom listbox replacing the native <select>, so its open panel can be
+// styled to match the rest of the page. Follows the WAI-ARIA "listbox"
+// pattern: the trigger is a button, the open panel itself receives focus
+// and owns arrow-key navigation via aria-activedescendant, rather than
+// moving focus between individual options.
+
+function SortDropdown({
+  value,
+  onChange,
+}: {
+  value: SortOption
+  onChange: (value: SortOption) => void
+}) {
+
+  const [isOpen, setIsOpen] = useState(false)
+
+  const [activeIndex, setActiveIndex] = useState(() =>
+    Math.max(
+      0,
+      SORT_OPTIONS.findIndex((option) => option.value === value),
+    ),
+  )
+
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const listboxRef = useRef<HTMLDivElement | null>(null)
+
+  const selectedOption =
+    SORT_OPTIONS.find((option) => option.value === value) ?? SORT_OPTIONS[0]
+
+  function openDropdown() {
+    setActiveIndex(
+      Math.max(
+        0,
+        SORT_OPTIONS.findIndex((option) => option.value === value),
+      ),
+    )
+    setIsOpen(true)
+  }
+
+  function closeDropdown(refocusButton: boolean) {
+    setIsOpen(false)
+    if (refocusButton) {
+      buttonRef.current?.focus()
+    }
+  }
+
+  function selectOption(option: SortOption) {
+    onChange(option)
+    closeDropdown(true)
+  }
+
+  // Focus the listbox itself once it opens, so arrow keys work immediately
+  // without an extra click/tab.
+  useEffect(() => {
+    if (isOpen) {
+      listboxRef.current?.focus()
+    }
+  }, [isOpen])
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        closeDropdown(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
+
+  return (
+
+    <div
+      ref={containerRef}
+      className="
+        relative
+      "
+    >
+
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() =>
+          isOpen ? closeDropdown(false) : openDropdown()
+        }
+        className="
+          flex
+          h-9
+          items-center
+          gap-2
+          rounded-full
+          border
+          border-black/10
+          bg-white
+          pl-4
+          pr-3
+          text-xs
+          font-bold
+          outline-none
+          transition
+          hover:bg-hive-yellow
+        "
+      >
+        {selectedOption.label}
+
+        <ChevronDown
+          size={14}
+          className={`
+            transition-transform
+            ${isOpen ? "rotate-180" : ""}
+          `}
+        />
+      </button>
+
+
+      <AnimatePresence>
+
+        {isOpen && (
+
+          <motion.div
+            ref={listboxRef}
+            role="listbox"
+            tabIndex={-1}
+            aria-activedescendant={
+              `sort-option-${SORT_OPTIONS[activeIndex].value}`
+            }
+            onKeyDown={(event) => {
+              switch (event.key) {
+                case "ArrowDown":
+                  event.preventDefault()
+                  setActiveIndex(
+                    (current) => (current + 1) % SORT_OPTIONS.length,
+                  )
+                  break
+                case "ArrowUp":
+                  event.preventDefault()
+                  setActiveIndex(
+                    (current) =>
+                      (current - 1 + SORT_OPTIONS.length) %
+                      SORT_OPTIONS.length,
+                  )
+                  break
+                case "Home":
+                  event.preventDefault()
+                  setActiveIndex(0)
+                  break
+                case "End":
+                  event.preventDefault()
+                  setActiveIndex(SORT_OPTIONS.length - 1)
+                  break
+                case "Enter":
+                case " ":
+                  event.preventDefault()
+                  selectOption(SORT_OPTIONS[activeIndex].value)
+                  break
+                case "Escape":
+                  event.preventDefault()
+                  closeDropdown(true)
+                  break
+                case "Tab":
+                  closeDropdown(false)
+                  break
+                default:
+                  break
+              }
+            }}
+            initial={{
+              opacity: 0,
+              y: -6,
+              scale: 0.98,
+            }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1,
+            }}
+            exit={{
+              opacity: 0,
+              y: -6,
+              scale: 0.98,
+            }}
+            transition={{
+              duration: 0.15,
+              ease: "easeOut",
+            }}
+            className="
+              absolute
+              right-0
+              top-[calc(100%+8px)]
+              z-40
+              w-56
+              overflow-hidden
+              rounded-2xl
+              border
+              border-black/10
+              bg-white
+              p-1.5
+              shadow-xl
+              outline-none
+            "
+          >
+
+            {SORT_OPTIONS.map((option, index) => {
+
+              const isSelected = option.value === value
+              const isActive = index === activeIndex
+
+              return (
+
+                <div
+                  key={option.value}
+                  id={`sort-option-${option.value}`}
+                  role="option"
+                  aria-selected={isSelected}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => selectOption(option.value)}
+                  className={`
+                    flex
+                    cursor-pointer
+                    items-center
+                    justify-between
+                    gap-3
+                    rounded-xl
+                    px-3
+                    py-2
+                    text-xs
+                    font-semibold
+                    transition
+                    ${isActive ? "bg-black/5" : ""}
+                    ${isSelected ? "text-ink" : "text-black/65"}
+                  `}
+                >
+                  {option.label}
+
+                  {isSelected && (
+                    <Check
+                      size={14}
+                      className="
+                        shrink-0
+                        text-honey-orange
+                      "
+                    />
+                  )}
+                </div>
+
+              )
+
+            })}
+
+          </motion.div>
+
+        )}
+
+      </AnimatePresence>
+
+    </div>
 
   )
 
@@ -1335,7 +1555,7 @@ function ToggleRow({
           transition
           ${
             checked
-              ? "bg-ink"
+              ? "bg-honey-orange"
               : "bg-black/10"
           }
         `}
