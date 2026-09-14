@@ -146,63 +146,70 @@ export function ProductCard({
         border-black/10
         bg-white
         p-5
-        shadow-[0_20px_40px_-25px_rgba(0,0,0,0.35)]
+        shadow-[0_12px_30px_-20px_rgba(0,0,0,0.25)]
         transition
+        hover:shadow-[0_25px_50px_-20px_rgba(0,0,0,0.35)]
       "
     >
 
       {/* ================================================================== */}
-      {/* PREMIUM BADGE                                                       */}
+      {/* CORNER BADGES (Premium + Offer, stacked top-left)                   */}
       {/* ================================================================== */}
 
-      {product.isPremium && (
+      {(product.isPremium || product.offer) && (
 
-        <span
+        <div
           className="
             absolute
             left-5
             top-5
             z-20
-            rounded-full
-            bg-black
-            px-3
-            py-1
-            text-[10px]
-            font-bold
-            uppercase
-            tracking-wide
-            text-white
+            flex
+            flex-col
+            items-start
+            gap-1.5
           "
         >
-          Premium
-        </span>
 
-      )}
+          {product.isPremium && (
 
+            <span
+              className="
+                rounded-full
+                bg-black
+                px-3
+                py-1
+                text-[10px]
+                font-bold
+                uppercase
+                tracking-wide
+                text-white
+              "
+            >
+              Premium
+            </span>
 
-      {/* ================================================================== */}
-      {/* OFFER BADGE                                                         */}
-      {/* ================================================================== */}
+          )}
 
-      {product.offer && (
+          {product.offer && (
 
-        <span
-          className="
-            absolute
-            right-5
-            top-5
-            z-20
-            rounded-full
-            bg-honey-orange
-            px-3
-            py-1
-            text-xs
-            font-bold
-            text-white
-          "
-        >
-          -{product.offer}%
-        </span>
+            <span
+              className="
+                rounded-full
+                bg-honey-orange
+                px-3
+                py-1
+                text-xs
+                font-bold
+                text-white
+              "
+            >
+              -{product.offer}%
+            </span>
+
+          )}
+
+        </div>
 
       )}
 
@@ -230,7 +237,7 @@ export function ProductCard({
         className="
           absolute
           right-5
-          top-14
+          top-5
           z-30
           flex
           size-10
@@ -369,6 +376,7 @@ export function ProductCard({
 
             <p
               className="
+                font-headline
                 text-2xl
                 font-extrabold
               "
@@ -404,12 +412,21 @@ export function ProductCard({
           absolute
           bottom-5
           right-5
+          z-30
           flex
           size-11
           items-center
           justify-center
           rounded-full
+          opacity-100
+          scale-100
           transition
+          [@media(hover:hover)]:opacity-0
+          [@media(hover:hover)]:scale-90
+          [@media(hover:hover)]:group-hover:opacity-100
+          [@media(hover:hover)]:group-hover:scale-100
+          focus-visible:opacity-100
+          focus-visible:scale-100
 
           ${
             added
