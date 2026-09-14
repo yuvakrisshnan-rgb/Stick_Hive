@@ -25,7 +25,7 @@ import {
 } from "./sticker-canvas";
 
 import { detectImageContour } from "@/lib/custom-sticker/contour";
-import { removeSimpleBackground, removeBackgroundML } from "@/lib/custom-sticker/background-removal";
+import { removeSimpleBackground, removeBackgroundML, cleanupBackgroundHoles } from "@/lib/custom-sticker/background-removal";
 import { DEFAULT_STICKER_FONT } from "@/lib/custom-sticker/fonts";
 
 import {
@@ -372,6 +372,19 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
         });
 
         autoBackgroundRemoved = true;
+
+        // ML matting can leave small transparent flecks inside the subject
+        // (hair, fabric) rather than only around it — clean those up in the
+        // actual artwork, not just the tracing mask, so the visible sticker
+        // doesn't show the holes even if this step fails and we fall back.
+        try {
+          processedImage = await cleanupBackgroundHoles(processedImage);
+        } catch (holeCleanupError) {
+          console.warn(
+            "Background hole cleanup failed, using uncleaned result:",
+            holeCleanupError,
+          );
+        }
       } catch (backgroundRemovalError) {
         console.warn(
           "Automatic background removal failed, using original image:",

@@ -15,6 +15,8 @@
 //     button, which predates the ML integration.
 // ============================================================================
 
+import { DEFAULT_MAX_HOLE_AREA_FRACTION, closeSmallHolesInImageData } from "./mask-cleanup";
+
 // --------------------------------------------------------------------------
 // ML BACKGROUND REMOVAL (@imgly/background-removal)
 // --------------------------------------------------------------------------
@@ -57,6 +59,55 @@ export async function removeBackgroundML(
     reader.onerror = () => reject(new Error("Unable to read background-removed image"));
     reader.readAsDataURL(resultBlob);
   });
+}
+
+// Matches contour.ts's ALPHA_THRESHOLD — both need to agree on what counts
+// as "opaque" so a pixel isn't treated as inside a hole for the visible
+// artwork but outside one for the traced outline, or vice versa.
+const HOLE_CLEANUP_ALPHA_THRESHOLD = 128;
+
+/**
+ * Fills small ML-matting artifact holes (flecks in hair, specks on fabric)
+ * directly in the actual image data — not just the abstract tracing mask
+ * contour.ts uses. Without this, the die-cut outline could look clean while
+ * the visible sticker artwork/thumbnail still shows the holes, since that's
+ * rendered from this image, not from the traced polygon.
+ *
+ * Processes at the source image's native resolution (no downscaling) so
+ * this doesn't reduce the final artwork's print quality — a plain flood
+ * fill is cheap enough that this stays fast even at several megapixels.
+ *
+ * @param source - a data URL for the (already background-removed) image.
+ * @returns a PNG data URL with small enclosed holes repainted opaque.
+ * @throws if the image can't be loaded/read — callers should fall back to
+ *   the uncleaned image rather than blocking the upload on this step.
+ */
+export async function cleanupBackgroundHoles(source: string): Promise<string> {
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to load image for hole cleanup"));
+    img.src = source;
+  });
+
+  const width = image.naturalWidth;
+  const height = image.naturalHeight;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Unable to create image canvas");
+
+  context.drawImage(image, 0, 0, width, height);
+  const imageData = context.getImageData(0, 0, width, height);
+
+  const maxHoleArea = Math.round(width * height * DEFAULT_MAX_HOLE_AREA_FRACTION);
+  closeSmallHolesInImageData(imageData, HOLE_CLEANUP_ALPHA_THRESHOLD, maxHoleArea);
+
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
 }
 
 // ============================================================================

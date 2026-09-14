@@ -19,6 +19,8 @@
 // and the caller should fall back to a bounding-shape approximation.
 // ============================================================================
 
+import { DEFAULT_MAX_HOLE_AREA_FRACTION, fillSmallHoles } from "./mask-cleanup";
+
 export type ContourPoint = { x: number; y: number };
 
 // ML background removal (@imgly/background-removal) produces a soft,
@@ -83,16 +85,23 @@ function buildAlphaMask(
   }
 
   const mask = new Uint8Array(width * height);
-  let transparentCount = 0;
 
   for (let i = 0; i < width * height; i++) {
-    const alpha = imageData.data[i * 4 + 3];
-    const isOpaque = alpha > ALPHA_THRESHOLD;
-    mask[i] = isOpaque ? 1 : 0;
+    mask[i] = imageData.data[i * 4 + 3] > ALPHA_THRESHOLD ? 1 : 0;
+  }
 
-    if (!isOpaque) {
-      transparentCount++;
-    }
+  // ML background removal can leave small transparent flecks scattered
+  // inside the subject (hair, fabric) rather than only around it. Left in
+  // the mask, each one would trace as a spurious extra outline through the
+  // middle of the artwork. Fill only small enclosed ones — a real gap (an
+  // arm-to-body gap, a shape with a deliberate hole) is left untouched
+  // because it's either connected to the border or too large.
+  const maxHoleArea = Math.round(width * height * DEFAULT_MAX_HOLE_AREA_FRACTION);
+  fillSmallHoles(mask, width, height, maxHoleArea);
+
+  let transparentCount = 0;
+  for (let i = 0; i < width * height; i++) {
+    if (mask[i] === 0) transparentCount++;
   }
 
   const transparentFraction = transparentCount / (width * height);
