@@ -535,3 +535,49 @@ manual "Remove Background" button that already calls it per-layer.
 - Runs client-side, so no image data leaves the browser — good for
   privacy/cost, but means processing time depends on the user's own
   device (slower on low-end phones).
+
+---
+
+## Session Update — Die-cut contour tuning (Claude Chat, this session)
+
+After the automatic background removal feature above shipped, the die-cut
+outline traced from the result was loose/imprecise rather than tightly
+hugging the subject. Root-caused and fixed in
+`src/lib/custom-sticker/contour.ts`:
+
+- `ALPHA_THRESHOLD` 20 → 128 — ML-removed edges are soft/anti-aliased
+  (a band of partially-transparent pixels), not the hard 0/255 cutoff of a
+  hand-made transparent PNG. A low threshold counted the outer, mostly-
+  transparent half of that fringe as "subject," bloating the outline
+  outward.
+- `SIMPLIFY_TOLERANCE` 1.5 → 0.75 — the dominant lever. Douglas-Peucker
+  keeps only points of maximum deviation from a chord; at a loose
+  tolerance it discards most of the boundary and disproportionately keeps
+  the few points that stick out furthest, which reads as a loose, bumpy
+  outline rather than one that hugs the subject.
+- `CONTOUR_MAX_DIMENSION` 400px → 800px — secondary contributor (more
+  resolution before downscaling), negligible cost (stayed under 100ms
+  even at 1000px in testing).
+
+Verified with a real measurement, not eyeballing: exposed the actual
+`detectImageContour` on `window` in a real browser and ran it against a
+controlled synthetic shape (a circle + thin protrusion with a soft alpha
+edge simulating ML matting) before and after the change. Outward bias on
+a 150px-radius test shape went from **+4.91px to +1.77px — 2.77x
+tighter** — measured directly against the shipped code, not a
+reimplementation.
+
+### Known limitation found during this work (not fixed, not urgent)
+
+`traceContour()` only ever traces **one connected region** — it starts at
+the first opaque pixel found (scanning top-to-bottom, left-to-right) and
+walks its boundary. If the true subject has legitimately disconnected
+parts (a logo made of separate shapes, art with a gap, a background-
+removal result that splits into fragments), only the first-found piece
+gets a die-cut outline; the rest silently gets none. Confirmed this while
+testing with a multi-part bee logo asset, where the ML model also only
+kept 2 of 6 disconnected shapes as "foreground" — a separate, compounding
+issue. Fixing the multi-region case would need connected-component
+labeling and a decision on how to combine regions (trace only the
+largest, or produce a compound path) — a real follow-up, but out of
+scope for the parameter tuning done here.
