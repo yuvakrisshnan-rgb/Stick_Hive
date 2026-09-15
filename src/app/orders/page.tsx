@@ -4,40 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Package, ShoppingBag } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
-
-type OrderStatus = "awaiting_payment" | "placed" | "processing" | "packed" | "shipped" | "out_for_delivery" | "delivered" | "cancelled";
-type PaymentStatus = "pending" | "pending_confirmation" | "paid" | "failed" | "cancelled" | "refunded";
-type OrderItem = {
-  type?: "product" | "custom";
-  productId?: string;
-  productName: string;
-  imageUrl?: string;
-  size?: string;
-  quantity: number;
-  unitPrice: number;
-  lineTotal: number;
-};
-type CustomerData = {
-  name: string;
-  email: string;
-  phone: string;
-  address: { addressLine1: string; addressLine2?: string; landmark?: string; city: string; state: string; pincode: string };
-};
-type StoredOrder = {
-  orderId: string;
-  createdAt: string;
-  status?: OrderStatus;
-  customer: CustomerData;
-  paymentMethod: string;
-  paymentStatus?: PaymentStatus;
-  paymentExpiresAt?: string;
- 
-  shippingDetails?: { method: "courier" | "pickup" | "local_delivery"; courier?: string; trackingNumber?: string; trackingUrl?: string; pickupLocation?: string; pickupInstructions?: string; shippedAt?: string; deliveredAt?: string; updatedAt: string };
-  items: OrderItem[];
-  subtotal: number;
-  shipping: number;
-  total: number;
-};
+// StoredOrder is the locked, authoritative Order contract — see src/types/order.ts.
+import type { StoredOrder } from "@/types/order";
 
 function formatStatus(order: StoredOrder): string {
   if (order.paymentStatus === "pending_confirmation") return "Payment Verification Pending";

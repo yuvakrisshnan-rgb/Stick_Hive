@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, Loader2, Package } from "lucide-react";
 import { useParams } from "next/navigation";
-
-type Order = { orderId: string; createdAt: string; status: string; paymentMethod: string; paymentStatus?: string; paymentExpiresAt?: string; shippingDetails?: { method: "courier" | "pickup" | "local_delivery"; courier?: string; trackingNumber?: string; trackingUrl?: string; pickupLocation?: string; pickupInstructions?: string; shippedAt?: string; deliveredAt?: string; lastCarrierStatus?: string; lastCarrierLocation?: string; lastCarrierStatusAt?: string; updatedAt: string }; subtotal: number; shipping: number; total: number; items: Array<{ type: string; productName: string; size: string; shape?: string; finish?: string; quantity: number; unitPrice: number; lineTotal: number }>; customer: { name: string; email: string; phone: string; address: { addressLine1: string; addressLine2?: string; landmark?: string; city: string; state: string; pincode: string } } };
+// StoredOrder is the locked, authoritative Order contract — see src/types/order.ts.
+import type { StoredOrder as Order } from "@/types/order";
 
 export default function OrderDetailPage() {
   const params = useParams<{ orderId: string }>();

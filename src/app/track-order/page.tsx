@@ -4,29 +4,8 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, ExternalLink, Loader2, Package } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-
-type Status = "awaiting_payment" | "placed" | "processing" | "packed" | "shipped" | "out_for_delivery" | "delivered" | "cancelled";
-type Order = {
-  orderId: string;
-  createdAt: string;
-  status: Status;
-  paymentStatus?: string;
-  paymentMethod: string;
-  total: number;
-  shippingDetails?: {
-    method: "courier" | "pickup" | "local_delivery";
-    courier?: string;
-    trackingNumber?: string;
-    trackingUrl?: string;
-    pickupLocation?: string;
-    pickupInstructions?: string;
-    shippedAt?: string;
-    deliveredAt?: string;
-    updatedAt: string;
-  };
-  items: Array<{ productName: string; quantity: number; type?: string }>;
-  customer: { name: string; address: { addressLine1: string; city: string; state: string; pincode: string } };
-};
+// StoredOrder is the locked, authoritative Order contract — see src/types/order.ts.
+import type { StoredOrder as Order, OrderStatus as Status } from "@/types/order";
 
 const steps: Array<{ id: Exclude<Status, "awaiting_payment" | "cancelled">; label: string; text: string }> = [
   { id: "placed", label: "Order Confirmed", text: "Your payment has been confirmed." },

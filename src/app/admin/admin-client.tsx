@@ -17,74 +17,12 @@ import {
   Truck,
 } from "lucide-react";
 
-type OrderItem = {
-  productId?: string;
-  productName: string;
-  imageUrl?: string;
-  type: "product" | "custom";
-  quantity: number;
-  artworkObjectKey?: string;
-  artworkContentType?: string;
-  size?: string;
-  shape?: string;
-  finish?: string;
-  lineTotal?: number;
-};
-
-type Order = {
-  orderId: string;
-  createdAt: string;
-  status: "awaiting_payment" | "placed" | "processing" | "packed" | "shipped" | "out_for_delivery" | "delivered" | "cancelled";
-  paymentMethod: string;
-  paymentStatus: "pending" | "pending_confirmation" | "paid" | "failed" | "cancelled" | "refunded";
-  paymentClaimedAt?: string;
-  paymentAttempt?: number;
-  paymentExpiresAt?: string;
- 
-  shippingDetails?: {
-    method: "courier" | "pickup" | "local_delivery";
-    courier?: string;
-    trackingNumber?: string;
-    trackingUrl?: string;
-    pickupLocation?: string;
-    pickupInstructions?: string;
-    shippedAt?: string;
-    deliveredAt?: string;
-    lastCarrierStatus?: string;
-    lastCarrierLocation?: string;
-    lastCarrierStatusAt?: string;
-    outForDeliveryEmailSentAt?: string;
-    updatedAt: string;
-  };
-  paymentVerification?: {
-    transactionId: string;
-    utr?: string;
-    payerUpiId?: string;
-    payerName?: string;
-    paidAmount: number;
-    paidAt: string;
-    verifiedAt: string;
-    verifiedBy: string;
-    note?: string;
-  };
-  customer: {
-    name: string;
-    email: string;
-    phone: string;
-    address: {
-      addressLine1: string;
-      addressLine2?: string;
-      landmark?: string;
-      city: string;
-      state: string;
-      pincode: string;
-    };
-  };
-  items: OrderItem[];
-  subtotal: number;
-  shipping: number;
-  total: number;
-};
+// StoredOrder/StoredOrderItem are the locked, authoritative Order contract —
+// see src/types/order.ts. Aliased to the names this file already used.
+import type {
+  StoredOrder as Order,
+  StoredOrderItem as OrderItem,
+} from "@/types/order";
 
 const fulfillmentStatuses = ["placed", "processing", "packed", "shipped", "out_for_delivery", "delivered", "cancelled"] as const;
 
@@ -442,7 +380,7 @@ export default function AdminPage() {
                       <aside className="border-t border-black/10 bg-black/[0.02] p-6 md:p-7 lg:border-l lg:border-t-0">
                         <div className="rounded-3xl bg-white p-5 shadow-sm">
                           <p className="text-xs font-bold uppercase tracking-widest text-black/40">Payment</p>
-                          <p className="mt-2 text-lg font-extrabold capitalize">{statusLabel(order.paymentStatus)}</p>
+                          <p className="mt-2 text-lg font-extrabold capitalize">{statusLabel(order.paymentStatus ?? "pending")}</p>
                           {order.paymentClaimedAt && <p className="mt-1 text-xs text-black/40">Claimed {new Date(order.paymentClaimedAt).toLocaleString("en-IN")}</p>}
                           {order.paymentExpiresAt && order.paymentStatus !== "paid" && <p className="mt-1 text-xs font-bold text-black/50">Payment window: {paymentRemaining(order.paymentExpiresAt) ?? "Expired"}</p>}
                           

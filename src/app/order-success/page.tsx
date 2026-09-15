@@ -31,116 +31,21 @@ import {
   generateInvoice,
 } from "@/lib/invoice-generator";
 
+import type {
+  StoredOrder,
+  OrderStatus,
+} from "@/types/order";
+
 
 // ============================================================================
 // TYPES
 // ============================================================================
+//
+// StoredOrder is the locked, authoritative Order contract — see
+// src/types/order.ts. This page used to carry its own hand-rolled copy of
+// this shape, which had quietly drifted (missing shippingDetails, etc.).
 
-type Address = {
-  addressLine1: string;
-  addressLine2?: string;
-  landmark?: string;
-  city: string;
-  state: string;
-  pincode: string;
-};
-
-
-type CustomerData = {
-  name: string;
-  email: string;
-  phone: string;
-  address: Address;
-};
-
-
-type OrderStatus =
-  | "awaiting_payment"
-  | "placed"
-  | "processing"
-  | "packed"
-  | "shipped"
-  | "delivered"
-  | "cancelled";
-
-
-type OrderItem = {
-  type: "product" | "custom";
-
-  productId?: string;
-
-  productName: string;
-
-  imageUrl?: string;
-
-  size: string;
-
-  shape?: string;
-
-  finish?: string;
-
-  quantity: number;
-
-  unitPrice: number;
-
-  lineTotal: number;
-};
-
-
-type StoredOrder = {
-  orderId: string;
-
-  createdAt: string;
-
-  status: OrderStatus;
-
-  customer: CustomerData;
-
-  paymentMethod: string;
-
-  paymentStatus?:
-    | "pending"
-    | "pending_confirmation"
-    | "paid"
-    | "failed"
-    | "cancelled"
-    | "refunded";
-
-  paymentClaimedAt?: string;
-
-  paymentAttempt?: number;
-
-  paymentExpiresAt?: string;
-
-
-  upiPayment?: {
-    upiId: string;
-    payeeName: string;
-    amount: number;
-    transactionReference: string;
-    uri: string;
-  };
-
-  paymentVerification?: {
-    transactionId: string;
-    utr?: string;
-    payerUpiId?: string;
-    payerName?: string;
-    paidAmount: number;
-    paidAt: string;
-    verifiedAt: string;
-    verifiedBy: string;
-    note?: string;
-  };
-
-  items: OrderItem[];
-
-  subtotal: number;
-
-  shipping: number;
-
-  total: number;
-};
+type Address = StoredOrder["customer"]["address"];
 
 
 // ============================================================================
