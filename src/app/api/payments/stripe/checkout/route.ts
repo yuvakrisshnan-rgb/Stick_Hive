@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getCurrentUser } from "../../../../../../backend/auth/service";
 import { getMyOrder, attachStripeSession } from "../../../../../../backend/orders/service";
 import { createStripeCheckoutSession } from "../../../../../../backend/payments/stripe";
 
 export const runtime = "nodejs";
 
+const schema = z.object({ orderId: z.string().trim().min(1).max(100) });
+
 export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
 
-    const body = (await request.json()) as { orderId?: string };
-    if (!body.orderId) return NextResponse.json({ success: false, error: "orderId is required." }, { status: 400 });
+    const body = schema.parse(await request.json());
 
     const order = await getMyOrder(body.orderId);
     if (!order) return NextResponse.json({ success: false, error: "Order not found." }, { status: 404 });
@@ -26,6 +28,9 @@ export async function POST(request: Request) {
     await attachStripeSession(body.orderId, session.id);
     return NextResponse.json({ success: true, checkoutUrl: session.url });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ success: false, error: "orderId is required." }, { status: 400 });
+    }
     const message = error instanceof Error ? error.message : "Unable to start Stripe checkout.";
     const status = /not authenticated/i.test(message) ? 401 : /not configured/i.test(message) ? 503 : 400;
     return NextResponse.json({ success: false, error: message }, { status });
