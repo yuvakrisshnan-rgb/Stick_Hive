@@ -17,6 +17,7 @@ import ImagePropertiesPanel from "./image-properties-panel";
 import ShapeSelector, { type StickerShape } from "./shape-selector";
 import StickerPriceBar from "./sticker-price-bar";
 import StickerEditorShell from "./sticker-editor-shell";
+import MyDesignsPanel from "./my-designs-panel";
 
 import {
   STAGE_SIZE,
@@ -843,6 +844,8 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
         onDeleteLayer={deleteLayer}
         onMoveLayer={moveLayer}
       />
+
+      <MyDesignsPanel />
 
       <ShapeSelector shape={shape} setShape={setShape} />
 
