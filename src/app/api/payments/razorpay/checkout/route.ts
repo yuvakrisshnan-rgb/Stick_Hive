@@ -20,11 +20,14 @@ export async function POST(request: Request) {
     }
 
     const created = await createRazorpayOrder({ order: order as never });
-    await attachRazorpayOrder(body.orderId, created.razorpayOrderId);
+    // attachRazorpayOrder atomically claims the slot - if a concurrent
+    // request from another tab already claimed it first, this returns
+    // THEIR razorpayOrderId instead, so both converge on one Razorpay order.
+    const razorpayOrderId = await attachRazorpayOrder(body.orderId, created.razorpayOrderId);
 
     return NextResponse.json({
       success: true,
-      razorpayOrderId: created.razorpayOrderId,
+      razorpayOrderId,
       amount: created.amount,
       currency: created.currency,
       keyId: getRazorpayKeyId(),

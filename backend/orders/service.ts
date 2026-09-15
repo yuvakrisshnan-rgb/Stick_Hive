@@ -445,15 +445,44 @@ export async function setStripePaymentState(params: {
   );
 }
 
-export async function attachRazorpayOrder(orderId: string, razorpayOrderId: string) {
+/**
+ * Atomically claims the razorpayOrderId slot on an order. If two checkout
+ * attempts race for the same order (e.g. two open tabs), only the first
+ * findOneAndUpdate can match razorpayOrderId: { $exists: false } - the
+ * second finds the slot already taken and gets back the WINNER's
+ * razorpayOrderId instead, so both callers converge on the same Razorpay
+ * order rather than the second silently overwriting the first's (which
+ * would orphan any webhook that later arrives for the first attempt).
+ *
+ * Returns the razorpayOrderId that should actually be used by the caller -
+ * this may not be the one passed in, if someone else won the race first.
+ */
+export async function attachRazorpayOrder(orderId: string, razorpayOrderId: string): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
   const collection = await getCollection<OrderDocument>("orders");
-  const result = await collection.updateOne(
-    { orderId, userId: new ObjectId(user.id), paymentMethod: "razorpay", paymentStatus: "pending" },
+
+  const claimed = await collection.findOneAndUpdate(
+    {
+      orderId,
+      userId: new ObjectId(user.id),
+      paymentMethod: "razorpay",
+      paymentStatus: "pending",
+      razorpayOrderId: { $exists: false },
+    },
     { $set: { razorpayOrderId } },
   );
-  if (!result.matchedCount) throw new Error("Order is unavailable for payment.");
+  if (claimed) return razorpayOrderId;
+
+  const existing = await collection.findOne({
+    orderId,
+    userId: new ObjectId(user.id),
+    paymentMethod: "razorpay",
+    paymentStatus: "pending",
+  });
+  if (existing?.razorpayOrderId) return existing.razorpayOrderId;
+
+  throw new Error("Order is unavailable for payment.");
 }
 
 /**
