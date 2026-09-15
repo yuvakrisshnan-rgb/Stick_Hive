@@ -111,9 +111,11 @@ export type ShippingDetails = {
 // PAYMENT VERIFICATION
 // ============================================================================
 //
-// Recorded by an admin (or the Google Pay auto-verification job) once a UPI
-// payment has been confirmed. See backend/payments/google-pay.ts and the
-// "Verify Payment" flow in src/app/admin/admin-client.tsx.
+// Recorded ONLY by an explicit admin action (submitPaymentVerification in
+// src/app/admin/admin-client.tsx) once a UPI payment has been confirmed.
+// This is what actually flips paymentStatus to "paid" — see
+// PaymentAutoVerification below for the automated, non-authoritative
+// counterpart.
 // ============================================================================
 
 export type PaymentVerification = {
@@ -130,6 +132,29 @@ export type PaymentVerification = {
   verifiedBy: string;
 
   note?: string;
+};
+
+
+// ============================================================================
+// PAYMENT AUTO-VERIFICATION
+// ============================================================================
+//
+// Set by an automated check (the Google Pay transaction-status API — see
+// backend/payments/google-pay.ts) when it detects a matching successful
+// payment. This is a SUGGESTION only: it pre-fills and flags the order for
+// an admin to review, but never sets paymentStatus itself. It's cleared
+// once an admin actually verifies the payment (see submitPaymentVerification).
+// ============================================================================
+
+export type PaymentAutoVerification = {
+  transactionId: string;
+  utr?: string;
+
+  paidAmount: number;
+  paidAt: string;
+
+  detectedAt: string;
+  source: string;
 };
 
 
@@ -182,6 +207,9 @@ export type StoredOrder = {
   paymentExpiresAt?: string;
 
   paymentVerification?: PaymentVerification;
+
+  /** A non-authoritative suggestion from an automated check — see PaymentAutoVerification. */
+  paymentAutoVerification?: PaymentAutoVerification;
 
   /** Present on UPI orders that aren't paid yet — see UpiPaymentDetails. */
   upiPayment?: UpiPaymentDetails;

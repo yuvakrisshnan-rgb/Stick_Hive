@@ -77,6 +77,19 @@ export type OrderDocument = {
     verifiedBy: string;
     note?: string;
   };
+  // An automated check (e.g. the Google Pay transaction-status API) suggests
+  // a payment looks complete, but this ONLY pre-fills the admin's manual
+  // verification form and surfaces a "needs review" flag — it must never
+  // set paymentStatus/status itself. Only submitPaymentVerification (an
+  // explicit admin action) is allowed to mark an order "paid".
+  paymentAutoVerification?: {
+    transactionId: string;
+    utr?: string;
+    paidAmount: number;
+    paidAt: Date;
+    detectedAt: Date;
+    source: string;
+  };
   paymentProof?: {
     objectKey: string;
     contentType: string;
@@ -590,7 +603,9 @@ export async function updateAdminOrder(params: {
     if (!params.status && existing.status === "awaiting_payment") update.status = "cancelled";
   }
 
-  await collection.updateOne({ orderId: params.orderId }, { $set: update });
+  const writeOps: { $set: Record<string, unknown>; $unset?: Record<string, ""> } = { $set: update };
+  if (update.paymentStatus === "paid") writeOps.$unset = { paymentAutoVerification: "" };
+  await collection.updateOne({ orderId: params.orderId }, writeOps);
   const updated = await collection.findOne({ orderId: params.orderId });
   if (!updated) throw new Error("Unable to reload updated order.");
   return serializeOrder(updated);
@@ -616,6 +631,9 @@ function serializeOrder(order: OrderDocument) {
     paymentExpiresAt: order.paymentExpiresAt?.toISOString(),
     paymentVerification: order.paymentVerification
       ? { ...order.paymentVerification, paidAt: order.paymentVerification.paidAt.toISOString(), verifiedAt: order.paymentVerification.verifiedAt.toISOString() }
+      : undefined,
+    paymentAutoVerification: order.paymentAutoVerification
+      ? { ...order.paymentAutoVerification, paidAt: order.paymentAutoVerification.paidAt.toISOString(), detectedAt: order.paymentAutoVerification.detectedAt.toISOString() }
       : undefined,
     paymentProof: order.paymentProof
       ? { ...order.paymentProof, uploadedAt: order.paymentProof.uploadedAt.toISOString() }

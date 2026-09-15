@@ -86,21 +86,25 @@ export async function checkGooglePayPayment(orderId: string) {
   const paid = data.transactionStatus === "SUCCESS" && amount !== null && Math.abs(amount - expected) < 0.01;
 
   if (paid) {
+    // IMPORTANT: this is an automated, unattended check (polled from the
+    // customer's browser every few seconds) — it must never itself mark an
+    // order "paid". It only records a suggestion for an admin to review and
+    // confirm via the existing manual submitPaymentVerification flow. Only
+    // that explicit admin action may set paymentStatus to "paid".
     const now = new Date();
-    const verification = {
+    const autoVerification = {
       transactionId: data.googleTransactionId || order.upiPayment.transactionReference,
       utr: data.upiTransactionReferenceNumber,
-      paidAmount: amount,
+      paidAmount: amount as number,
       paidAt: now,
-      verifiedAt: now,
-      verifiedBy: "google-pay-api",
-      note: "Automatically verified using Google Pay transaction-status API.",
+      detectedAt: now,
+      source: "google-pay-api",
     };
     await collection.updateOne(
       { _id: order._id, paymentStatus: { $ne: "paid" } },
-      { $set: { paymentStatus: "paid", status: order.status === "awaiting_payment" ? "placed" : order.status, paymentVerification: verification, updatedAt: now } },
+      { $set: { paymentAutoVerification: autoVerification, updatedAt: now } },
     );
-    return { status: data.transactionStatus, paid: true, order: await collection.findOne({ _id: order._id }) };
+    return { status: data.transactionStatus, paid: false, autoVerified: true, order: await collection.findOne({ _id: order._id }) };
   }
 
   return { status: data.transactionStatus ?? "IN_PROGRESS", paid: false, amount, order };

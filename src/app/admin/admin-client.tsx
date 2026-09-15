@@ -159,15 +159,16 @@ export default function AdminPage() {
   function openPaymentVerification(order: Order) {
     const now = new Date();
     const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const auto = order.paymentAutoVerification;
     setVerifyOrder(order);
     setVerification({
-      transactionId: "",
-      utr: "",
+      transactionId: auto?.transactionId ?? "",
+      utr: auto?.utr ?? "",
       payerUpiId: "",
       payerName: "",
-      paidAmount: order.total.toFixed(2),
-      paidAt: local,
-      note: "",
+      paidAmount: auto ? auto.paidAmount.toFixed(2) : order.total.toFixed(2),
+      paidAt: auto ? new Date(new Date(auto.paidAt).getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : local,
+      note: auto ? "Auto-detected via Google Pay — review before confirming." : "",
     });
   }
 
@@ -537,7 +538,15 @@ export default function AdminPage() {
                           {order.paymentClaimedAt && <p className="mt-1 text-xs text-black/40">Claimed {new Date(order.paymentClaimedAt).toLocaleString("en-IN")}</p>}
                           {order.paymentExpiresAt && order.paymentStatus !== "paid" && <p className="mt-1 text-xs font-bold text-black/50">Payment window: {paymentRemaining(order.paymentExpiresAt) ?? "Expired"}</p>}
 
-                          {order.paymentStatus === "pending_confirmation" && (
+                          {order.paymentStatus !== "paid" && order.paymentAutoVerification && (
+                            <div className="mt-3 rounded-2xl border border-hive-yellow bg-hive-yellow/40 p-3 text-xs leading-5">
+                              <p className="font-extrabold">Auto-verified via Google Pay — needs your confirmation</p>
+                              <p className="mt-1 text-black/60">Detected ₹{order.paymentAutoVerification.paidAmount.toFixed(2)} · Txn {order.paymentAutoVerification.transactionId}</p>
+                              <p className="text-black/50">This is a suggestion only — it does not confirm the order. Review it below and confirm to mark this order paid.</p>
+                            </div>
+                          )}
+
+                          {(order.paymentStatus === "pending_confirmation" || order.paymentAutoVerification) && order.paymentStatus !== "paid" && order.paymentStatus !== "cancelled" && (
                             <button disabled={busy === order.orderId} onClick={() => openPaymentVerification(order)} className="mt-4 w-full rounded-full bg-black px-4 py-3 text-sm font-bold text-white disabled:opacity-50">
                               Confirm Payment
                             </button>
