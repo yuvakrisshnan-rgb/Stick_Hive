@@ -94,6 +94,15 @@ export type ShippingDetails = {
   lastCarrierStatusAt?: string;
   outForDeliveryEmailSentAt?: string;
 
+  /** Present once a Delhivery shipment has been created for this order. */
+  delhivery?: {
+    waybill: string;
+    pickupLocation: string;
+    createdAt: string;
+    environment: "staging" | "production";
+    pickupId?: string;
+  };
+
   updatedAt: string;
 };
 

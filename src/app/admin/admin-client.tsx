@@ -66,6 +66,20 @@ export default function AdminPage() {
     note: "",
   });
 
+  // --------------------------------------------------------------------------
+  // DELHIVERY
+  // --------------------------------------------------------------------------
+  const [delhiveryCreateOrder, setDelhiveryCreateOrder] = useState<Order | null>(null);
+  const [delhiveryCreateForm, setDelhiveryCreateForm] = useState({ pickupLocation: "", weightGrams: "", lengthCm: "", widthCm: "", heightCm: "" });
+  const [delhiveryCreateError, setDelhiveryCreateError] = useState("");
+
+  const [delhiveryPickupOrder, setDelhiveryPickupOrder] = useState<Order | null>(null);
+  const [delhiveryPickupForm, setDelhiveryPickupForm] = useState({ pickupLocation: "", pickupDate: "", pickupTime: "10:00:00", expectedPackageCount: "1" });
+  const [delhiveryPickupError, setDelhiveryPickupError] = useState("");
+
+  const [syncBusy, setSyncBusy] = useState<string | null>(null);
+  const [syncMessages, setSyncMessages] = useState<Record<string, string>>({});
+
   async function load() {
     setLoading(true);
     setError("");
@@ -218,6 +232,110 @@ export default function AdminPage() {
       window.alert(e instanceof Error ? e.message : "Unable to save delivery details.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  function openDelhiveryCreate(order: Order) {
+    setDelhiveryCreateError("");
+    setDelhiveryCreateForm({ pickupLocation: "", weightGrams: "", lengthCm: "", widthCm: "", heightCm: "" });
+    setDelhiveryCreateOrder(order);
+  }
+
+  async function submitDelhiveryCreate() {
+    if (!delhiveryCreateOrder) return;
+    const { weightGrams, lengthCm, widthCm, heightCm } = delhiveryCreateForm;
+    if (!weightGrams || !lengthCm || !widthCm || !heightCm) {
+      setDelhiveryCreateError("Weight and all three dimensions are required.");
+      return;
+    }
+
+    setDelhiveryCreateError("");
+    setBusy(delhiveryCreateOrder.orderId);
+    try {
+      const response = await fetch(`/api/admin/orders/${encodeURIComponent(delhiveryCreateOrder.orderId)}/delhivery/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(delhiveryCreateForm.pickupLocation.trim() ? { pickupLocation: delhiveryCreateForm.pickupLocation.trim() } : {}),
+          weightGrams: Number(weightGrams),
+          lengthCm: Number(lengthCm),
+          widthCm: Number(widthCm),
+          heightCm: Number(heightCm),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || "Unable to create Delhivery shipment.");
+      setOrders((current) => current.map((order) => (order.orderId === delhiveryCreateOrder.orderId ? data.order : order)));
+      setDelhiveryCreateOrder(null);
+    } catch (e) {
+      setDelhiveryCreateError(e instanceof Error ? e.message : "Unable to create Delhivery shipment.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function openDelhiveryPickup(order: Order) {
+    setDelhiveryPickupError("");
+    setDelhiveryPickupForm({
+      pickupLocation: order.shippingDetails?.delhivery?.pickupLocation ?? "",
+      pickupDate: new Date().toISOString().slice(0, 10),
+      pickupTime: "10:00:00",
+      expectedPackageCount: "1",
+    });
+    setDelhiveryPickupOrder(order);
+  }
+
+  async function submitDelhiveryPickup() {
+    if (!delhiveryPickupOrder) return;
+    const { pickupLocation, pickupDate, pickupTime, expectedPackageCount } = delhiveryPickupForm;
+    if (!pickupLocation.trim() || !pickupDate || !pickupTime || !expectedPackageCount) {
+      setDelhiveryPickupError("Pickup location, date, time, and package count are all required.");
+      return;
+    }
+
+    setDelhiveryPickupError("");
+    setBusy(delhiveryPickupOrder.orderId);
+    try {
+      const response = await fetch(`/api/admin/orders/${encodeURIComponent(delhiveryPickupOrder.orderId)}/delhivery/pickup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pickupLocation: pickupLocation.trim(),
+          pickupDate,
+          pickupTime,
+          expectedPackageCount: Number(expectedPackageCount),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || "Unable to schedule Delhivery pickup.");
+      setSyncMessages((current) => ({ ...current, [delhiveryPickupOrder.orderId]: data.pickupId ? `Pickup scheduled — pickup ID ${data.pickupId}.` : "Pickup request sent." }));
+      setDelhiveryPickupOrder(null);
+    } catch (e) {
+      setDelhiveryPickupError(e instanceof Error ? e.message : "Unable to schedule Delhivery pickup.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function syncDelhiveryTracking(orderId: string) {
+    setSyncBusy(orderId);
+    setSyncMessages((current) => ({ ...current, [orderId]: "" }));
+    try {
+      const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/delhivery/sync`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || "Unable to sync Delhivery tracking.");
+      if (data.result?.shippingDetails) {
+        setOrders((current) => current.map((order) => (order.orderId === orderId ? { ...order, shippingDetails: data.result.shippingDetails, status: data.result.mappedStatus ?? order.status } : order)));
+      }
+      const t = data.tracking;
+      setSyncMessages((current) => ({
+        ...current,
+        [orderId]: t?.status ? `${t.status}${t.location ? ` · ${t.location}` : ""}${t.statusDateTime ? ` · ${new Date(t.statusDateTime).toLocaleString("en-IN")}` : ""}` : "Synced — no status returned yet.",
+      }));
+    } catch (e) {
+      setSyncMessages((current) => ({ ...current, [orderId]: e instanceof Error ? e.message : "Unable to sync Delhivery tracking." }));
+    } finally {
+      setSyncBusy(null);
     }
   }
 
@@ -418,7 +536,7 @@ export default function AdminPage() {
                           <p className="mt-2 text-lg font-extrabold capitalize">{statusLabel(order.paymentStatus ?? "pending")}</p>
                           {order.paymentClaimedAt && <p className="mt-1 text-xs text-black/40">Claimed {new Date(order.paymentClaimedAt).toLocaleString("en-IN")}</p>}
                           {order.paymentExpiresAt && order.paymentStatus !== "paid" && <p className="mt-1 text-xs font-bold text-black/50">Payment window: {paymentRemaining(order.paymentExpiresAt) ?? "Expired"}</p>}
-                          
+
                           {order.paymentStatus === "pending_confirmation" && (
                             <button disabled={busy === order.orderId} onClick={() => openPaymentVerification(order)} className="mt-4 w-full rounded-full bg-black px-4 py-3 text-sm font-bold text-white disabled:opacity-50">
                               Confirm Payment
@@ -453,6 +571,62 @@ export default function AdminPage() {
                           <p className="mt-3 text-xs text-black/40">Save delivery details here, then move the order through Shipped / Out for Delivery / Delivered.</p>
                           {customItems.length > 0 && <a href={`/api/admin/orders/${encodeURIComponent(order.orderId)}/print-pack`} className="mt-4 inline-flex items-center gap-2 text-sm font-extrabold underline underline-offset-4"><ExternalLink size={14} /> Open print pack download</a>}
                         </div>
+
+                        {order.paymentStatus === "paid" && (
+                          <div className="mt-4 rounded-3xl bg-white p-5 shadow-sm">
+                            <p className="font-extrabold">Delhivery</p>
+
+                            {!order.shippingDetails?.delhivery ? (
+                              <>
+                                <p className="mt-2 text-sm text-black/50">No Delhivery shipment created yet.</p>
+                                <button
+                                  type="button"
+                                  onClick={() => openDelhiveryCreate(order)}
+                                  disabled={busy === order.orderId}
+                                  className="mt-3 w-full rounded-full bg-black px-4 py-2.5 text-xs font-extrabold text-white disabled:opacity-50"
+                                >
+                                  Create Shipment
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <p className="mt-2 text-sm text-black/60">AWB: <span className="font-bold text-black">{order.shippingDetails.delhivery.waybill}</span></p>
+                                {order.shippingDetails.delhivery.pickupId && <p className="text-sm text-black/60">Pickup ID: <span className="font-bold text-black">{order.shippingDetails.delhivery.pickupId}</span></p>}
+                                {order.shippingDetails.lastCarrierStatus && (
+                                  <p className="mt-1 text-sm text-black/60">
+                                    Carrier status: <span className="font-bold text-black">{order.shippingDetails.lastCarrierStatus}</span>
+                                    {order.shippingDetails.lastCarrierLocation && ` · ${order.shippingDetails.lastCarrierLocation}`}
+                                    {order.shippingDetails.lastCarrierStatusAt && ` · ${new Date(order.shippingDetails.lastCarrierStatusAt).toLocaleString("en-IN")}`}
+                                  </p>
+                                )}
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => openDelhiveryPickup(order)}
+                                    disabled={busy === order.orderId}
+                                    className="rounded-full border border-black/10 px-4 py-2 text-xs font-extrabold disabled:opacity-50"
+                                  >
+                                    Schedule Pickup
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void syncDelhiveryTracking(order.orderId)}
+                                    disabled={syncBusy === order.orderId}
+                                    className="inline-flex items-center gap-2 rounded-full border border-black/10 px-4 py-2 text-xs font-extrabold disabled:opacity-50"
+                                  >
+                                    {syncBusy === order.orderId ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                                    Sync Tracking Status
+                                  </button>
+                                </div>
+
+                                {syncMessages[order.orderId] && (
+                                  <p className="mt-3 text-xs font-semibold text-black/60">{syncMessages[order.orderId]}</p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
                       </aside>
                     </div>
                   </section>
@@ -543,6 +717,100 @@ export default function AdminPage() {
               <button type="button" onClick={() => setVerifyOrder(null)} className="rounded-full border border-black/10 px-6 py-3 text-sm font-bold">Cancel</button>
               <button type="button" onClick={() => void submitPaymentVerification()} disabled={busy === verifyOrder.orderId} className="rounded-full bg-black px-6 py-3 text-sm font-extrabold text-white disabled:opacity-50">
                 {busy === verifyOrder.orderId ? "Saving verification…" : "Verify Payment & Confirm Order"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {delhiveryCreateOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl md:p-8">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-black/40">Delhivery</p>
+                <h2 className="mt-2 text-2xl font-extrabold">Create shipment for {delhiveryCreateOrder.orderId}</h2>
+                <p className="mt-2 text-sm text-black/50">This calls Delhivery&apos;s live API and assigns a real AWB — only do this once you&apos;re ready to ship.</p>
+              </div>
+              <button type="button" onClick={() => setDelhiveryCreateOrder(null)} className="rounded-full border border-black/10 px-3 py-2 text-sm font-bold">Close</button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <label className="block sm:col-span-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup location</span>
+                <input value={delhiveryCreateForm.pickupLocation} onChange={(e) => setDelhiveryCreateForm((v) => ({ ...v, pickupLocation: e.target.value }))} placeholder="Leave blank to use the default configured location" className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Weight (grams) *</span>
+                <input type="number" min="1" value={delhiveryCreateForm.weightGrams} onChange={(e) => setDelhiveryCreateForm((v) => ({ ...v, weightGrams: e.target.value }))} placeholder="e.g. 50" className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Length (cm) *</span>
+                <input type="number" min="1" value={delhiveryCreateForm.lengthCm} onChange={(e) => setDelhiveryCreateForm((v) => ({ ...v, lengthCm: e.target.value }))} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Width (cm) *</span>
+                <input type="number" min="1" value={delhiveryCreateForm.widthCm} onChange={(e) => setDelhiveryCreateForm((v) => ({ ...v, widthCm: e.target.value }))} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Height (cm) *</span>
+                <input type="number" min="1" value={delhiveryCreateForm.heightCm} onChange={(e) => setDelhiveryCreateForm((v) => ({ ...v, heightCm: e.target.value }))} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+            </div>
+
+            {delhiveryCreateError && (
+              <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-600">{delhiveryCreateError}</div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setDelhiveryCreateOrder(null)} className="rounded-full border border-black/10 px-6 py-3 text-sm font-bold">Cancel</button>
+              <button type="button" onClick={() => void submitDelhiveryCreate()} disabled={busy === delhiveryCreateOrder.orderId} className="rounded-full bg-black px-6 py-3 text-sm font-extrabold text-white disabled:opacity-50">
+                {busy === delhiveryCreateOrder.orderId ? "Creating shipment…" : "Create Shipment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {delhiveryPickupOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl md:p-8">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-black/40">Delhivery</p>
+                <h2 className="mt-2 text-2xl font-extrabold">Schedule pickup for {delhiveryPickupOrder.orderId}</h2>
+                <p className="mt-2 text-sm text-black/50">This requests a courier pickup from Delhivery — it covers all shipments waiting at this location, not just this order.</p>
+              </div>
+              <button type="button" onClick={() => setDelhiveryPickupOrder(null)} className="rounded-full border border-black/10 px-3 py-2 text-sm font-bold">Close</button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <label className="block sm:col-span-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup location *</span>
+                <input value={delhiveryPickupForm.pickupLocation} onChange={(e) => setDelhiveryPickupForm((v) => ({ ...v, pickupLocation: e.target.value }))} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup date *</span>
+                <input type="date" value={delhiveryPickupForm.pickupDate} onChange={(e) => setDelhiveryPickupForm((v) => ({ ...v, pickupDate: e.target.value }))} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Pickup time *</span>
+                <input type="time" step="1" value={delhiveryPickupForm.pickupTime} onChange={(e) => setDelhiveryPickupForm((v) => ({ ...v, pickupTime: e.target.value }))} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-widest text-black/40">Expected package count *</span>
+                <input type="number" min="1" value={delhiveryPickupForm.expectedPackageCount} onChange={(e) => setDelhiveryPickupForm((v) => ({ ...v, expectedPackageCount: e.target.value }))} className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-black" />
+              </label>
+            </div>
+
+            {delhiveryPickupError && (
+              <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-600">{delhiveryPickupError}</div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setDelhiveryPickupOrder(null)} className="rounded-full border border-black/10 px-6 py-3 text-sm font-bold">Cancel</button>
+              <button type="button" onClick={() => void submitDelhiveryPickup()} disabled={busy === delhiveryPickupOrder.orderId} className="rounded-full bg-black px-6 py-3 text-sm font-extrabold text-white disabled:opacity-50">
+                {busy === delhiveryPickupOrder.orderId ? "Scheduling…" : "Schedule Pickup"}
               </button>
             </div>
           </div>

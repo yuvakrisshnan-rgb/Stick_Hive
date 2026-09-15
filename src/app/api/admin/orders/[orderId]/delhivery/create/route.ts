@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
       courier: "Delhivery",
       trackingNumber: created.waybill,
       trackingUrl: created.trackingUrl,
-      delhivery: { waybill: created.waybill, pickupLocation: created.pickupLocation, createdAt: new Date(), environment: process.env.DELHIVERY_ENV === "staging" ? "staging" : "production" },
+      delhivery: { waybill: created.waybill, pickupLocation: created.pickupLocation, createdAt: new Date(), environment: (process.env.DELHIVERY_ENV === "staging" ? "staging" : "production") as "staging" | "production" },
       updatedAt: new Date(),
     };
     await collection.updateOne({ _id: raw._id }, { $set: { shippingDetails, updatedAt: new Date(), status: raw.status === "placed" ? "packed" : raw.status } });

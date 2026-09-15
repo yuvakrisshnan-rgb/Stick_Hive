@@ -114,6 +114,13 @@ export type OrderDocument = {
     lastCarrierLocation?: string;
     lastCarrierStatusAt?: Date;
     outForDeliveryEmailSentAt?: Date;
+    delhivery?: {
+      waybill: string;
+      pickupLocation: string;
+      createdAt: Date;
+      environment: "staging" | "production";
+      pickupId?: string;
+    };
     updatedAt: Date;
   };
 };
