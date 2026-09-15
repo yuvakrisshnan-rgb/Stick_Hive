@@ -423,6 +423,13 @@ const STICKERS: StickerSpec[] = [
 
 const WORDMARK = "StickHive";
 
+// Tracks whether the intro has already played THIS browser tab session.
+// sessionStorage (not localStorage) is deliberate: it persists across
+// client-side route navigations and hard reloads within the same tab, but
+// resets when the tab/browser closes — matching "play once per session,"
+// not "play once ever."
+const INTRO_SESSION_KEY = "stickhive-intro-shown";
+
 
 
 
@@ -836,6 +843,36 @@ useEffect(()=>{
   useEffect(() => {
 
 
+    // Already played this tab session (a client-side route navigation, or
+    // a hard reload/new tab within the same session) — skip straight to
+    // the finished state instead of replaying the full sequence.
+
+    let alreadyShown = false;
+
+    try {
+
+      alreadyShown =
+        sessionStorage.getItem(INTRO_SESSION_KEY) === "1";
+
+    } catch {
+
+      // Some privacy modes block sessionStorage — fail open (play the
+      // intro) rather than crash.
+
+    }
+
+
+    if (alreadyShown) {
+
+      setVisible(false);
+
+      onCompleteRef.current?.();
+
+      return;
+
+    }
+
+
     document.body.style.overflow = "hidden";
 
 
@@ -884,6 +921,20 @@ useEffect(()=>{
         // unlock scrolling
 
         document.body.style.overflow = "";
+
+
+
+        // remember this for the rest of the tab session
+
+        try {
+
+          sessionStorage.setItem(INTRO_SESSION_KEY, "1");
+
+        } catch {
+
+          // Non-fatal — worst case the intro plays again next mount.
+
+        }
 
 
 

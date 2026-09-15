@@ -11,6 +11,8 @@ import {
 } from "motion/react";
 
 import {
+  LogIn,
+  Loader2,
   Minus,
   Plus,
   ShoppingBag,
@@ -33,12 +35,16 @@ import type {
   CustomStickerCartLine,
 } from "@/components/shop/store-provider";
 
+import { useAuth } from "@/components/auth/auth-provider";
+
 
 // ============================================================================
 // CART DRAWER
 // ============================================================================
 
 export default function CartDrawer() {
+  const { user, loading: authLoading } = useAuth();
+
   const {
     isCartOpen,
     closeCart,
@@ -318,12 +324,47 @@ export default function CartDrawer() {
 
 
             {/* ============================================================
-                EMPTY CART
+                SIGN IN REQUIRED
             ============================================================ */}
 
-            {!hasItems ? (
+            {authLoading ? (
 
-              <EmptyCart />
+              <div
+                className="
+                  flex
+                  flex-1
+                  items-center
+                  justify-center
+                "
+              >
+
+                <Loader2
+                  size={28}
+                  className="
+                    animate-spin
+                  "
+                />
+
+              </div>
+
+            ) : !user ? (
+
+              <SignedOutCart
+                onSignIn={() => {
+                  closeCart();
+                  (
+                    window as Window & {
+                      __stickHiveOpenAuth?: () => void;
+                    }
+                  ).__stickHiveOpenAuth?.();
+                }}
+              />
+
+            ) : !hasItems ? (
+
+              <EmptyCart
+                onExplore={closeCart}
+              />
 
             ) : (
 
@@ -1197,10 +1238,112 @@ function CustomCartItem({
 
 
 // ============================================================================
+// SIGNED OUT
+// ============================================================================
+// Matches the inline "sign in" prompt pattern used on /orders and
+// /account/settings — but with an actual button, not just descriptive
+// text: the cart's own backdrop (z-[190]) sits above the navbar (z-50)
+// while the drawer is open, so the account icon those pages point to is
+// visually obscured here. Closes the drawer before opening the auth
+// dialog, since the dialog itself renders at a lower z-index than the
+// drawer and would otherwise be hidden behind it.
+
+function SignedOutCart({
+  onSignIn,
+}: {
+  onSignIn: () => void;
+}) {
+
+  return (
+    <div
+      className="
+        flex
+        flex-1
+        flex-col
+        items-center
+        justify-center
+        px-8
+        text-center
+      "
+    >
+
+      <div
+        className="
+          flex
+          size-20
+          items-center
+          justify-center
+          rounded-full
+          bg-hive-yellow
+        "
+      >
+        <ShoppingBag size={34} />
+      </div>
+
+
+      <h3
+        className="
+          mt-6
+          text-2xl
+          font-extrabold
+        "
+      >
+        Sign in to view your cart
+      </h3>
+
+
+      <p
+        className="
+          mt-2
+          max-w-xs
+          text-sm
+          font-medium
+          text-black/45
+        "
+      >
+        Your Stick Hive cart is tied to your
+        account so only you can see it.
+      </p>
+
+
+      <button
+        type="button"
+        onClick={onSignIn}
+        className="
+          mt-6
+          inline-flex
+          items-center
+          justify-center
+          gap-2
+          rounded-full
+          bg-black
+          px-8
+          py-3
+          text-sm
+          font-bold
+          text-white
+          transition
+          hover:scale-[1.02]
+        "
+      >
+        <LogIn size={16} />
+        Sign In
+      </button>
+
+    </div>
+  );
+}
+
+
+// ============================================================================
 // EMPTY CART
 // ============================================================================
 
-function EmptyCart() {
+function EmptyCart({
+  onExplore,
+}: {
+  onExplore: () => void;
+}) {
 
   return (
     <div
@@ -1256,6 +1399,7 @@ function EmptyCart() {
 
       <Link
         href="/shop"
+        onClick={onExplore}
         className="
           mt-6
           inline-flex

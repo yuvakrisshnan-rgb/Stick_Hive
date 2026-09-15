@@ -4,7 +4,9 @@ import Link from "next/link"
 
 import {
   Heart,
+  ArrowLeft,
   ArrowRight,
+  Loader2,
   Trash2,
 } from "lucide-react"
 
@@ -24,12 +26,21 @@ import {
   useWishlist,
 } from "@/components/wishlist/wishlist-provider"
 
+import {
+  useAuth,
+} from "@/components/auth/auth-provider"
+
 
 // ============================================================================
 // WISHLIST PAGE
 // ============================================================================
 
 export default function WishlistPage() {
+
+  const {
+    user,
+    loading: authLoading,
+  } = useAuth()
 
   const {
     wishlist,
@@ -44,6 +55,166 @@ export default function WishlistPage() {
           product.id,
         ),
     )
+
+
+  if (authLoading) {
+
+    return (
+
+      <main
+        className="
+          min-h-screen
+          bg-cream
+          px-6
+          pb-20
+          pt-32
+        "
+      >
+
+        <div
+          className="
+            mx-auto
+            flex
+            min-h-[50vh]
+            max-w-5xl
+            items-center
+            justify-center
+          "
+        >
+
+          <Loader2
+            size={30}
+            className="
+              animate-spin
+            "
+          />
+
+        </div>
+
+      </main>
+
+    )
+
+  }
+
+
+  if (!user) {
+
+    return (
+
+      <main
+        className="
+          min-h-screen
+          bg-cream
+          px-6
+          pb-20
+          pt-32
+        "
+      >
+
+        <div
+          className="
+            mx-auto
+            max-w-3xl
+          "
+        >
+
+          <Link
+            href="/"
+            className="
+              inline-flex
+              items-center
+              gap-2
+              text-sm
+              font-semibold
+              text-black/60
+              hover:text-black
+            "
+          >
+
+            <ArrowLeft
+              size={16}
+            />
+
+            Back to Home
+
+          </Link>
+
+
+          <section
+            className="
+              mt-10
+              rounded-[2.5rem]
+              bg-white
+              p-10
+              text-center
+              shadow-xl
+              md:p-14
+            "
+          >
+
+            <div
+              className="
+                mx-auto
+                flex
+                size-20
+                items-center
+                justify-center
+                rounded-full
+                bg-hive-yellow
+              "
+            >
+
+              <Heart
+                size={36}
+              />
+
+            </div>
+
+
+            <h1
+              className="
+                mt-7
+                text-3xl
+                font-extrabold
+              "
+            >
+              Sign in to see your wishlist
+            </h1>
+
+
+            <p
+              className="
+                mx-auto
+                mt-3
+                max-w-md
+                text-black/50
+              "
+            >
+              Your saved stickers are tied to your account so only you can see them.
+            </p>
+
+
+            <p
+              className="
+                mt-4
+                text-sm
+                font-semibold
+                text-black/45
+              "
+            >
+              Use the account icon in the navigation to continue with email OTP.
+            </p>
+
+          </section>
+
+        </div>
+
+      </main>
+
+    )
+
+  }
 
 
   return (
