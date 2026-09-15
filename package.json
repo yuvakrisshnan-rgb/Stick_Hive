@@ -27,6 +27,8 @@
     "@gsap/react": "^2.1.2",
     "@imgly/background-removal": "^1.7.0",
     "@phosphor-icons/react": "^2.1.7",
+    "@upstash/ratelimit": "^2.1.0",
+    "@upstash/redis": "^1.38.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "google-auth-library": "^9.14.2",

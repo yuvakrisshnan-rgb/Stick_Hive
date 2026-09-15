@@ -2,12 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodError, z } from "zod";
 import { requestEmailOtp } from "../../../../backend/auth/service";
 import { errorFromUnknown } from "../../../../backend/http/auth-response";
+import { rateLimit, getClientIp } from "../../../../backend/security/rate-limit";
 
 export const runtime = "nodejs";
 const schema = z.object({ email: z.string().trim().email().max(254) });
 
 export async function POST(request: NextRequest) {
   try {
+    // Same bucket key as /api/auth/send-otp — this is the legacy adapter for
+    // the exact same requestEmailOtp() call, so a separate bucket would let
+    // an attacker double their effective OTP-send rate by alternating
+    // between the two endpoints.
+    const ip = getClientIp(request);
+    if (ip && !(await rateLimit(`send-otp:${ip}`, 5, 10 * 60 * 1000))) {
+      return NextResponse.json({ success: false, error: "Too many requests. Please try again later." }, { status: 429 });
+    }
+
     const body = schema.parse(await request.json());
     return NextResponse.json(await requestEmailOtp(body.email));
   } catch (error) {

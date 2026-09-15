@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodError, z } from "zod";
 import { requestEmailOtp } from "../../../../../backend/auth/service";
 import { errorFromUnknown } from "../../../../../backend/http/auth-response";
-import { checkRateLimit, getClientIp } from "../../../../../backend/security/rate-limit";
+import { rateLimit, getClientIp } from "../../../../../backend/security/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -11,7 +11,7 @@ const schema = z.object({ email: z.string().trim().email().max(254) });
 export async function POST(request: NextRequest) {
   try {
     const ip = getClientIp(request);
-    if (ip && !checkRateLimit(`send-otp:${ip}`, 5, 10 * 60 * 1000)) {
+    if (ip && !(await rateLimit(`send-otp:${ip}`, 5, 10 * 60 * 1000))) {
       return NextResponse.json({ success: false, error: "Too many requests. Please try again later." }, { status: 429 });
     }
 

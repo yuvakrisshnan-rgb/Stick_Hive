@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { claimUpiPayment } from "../../../../../../backend/orders/service";
+import { rateLimit, getClientIp } from "../../../../../../backend/security/rate-limit";
 
 export const runtime = "nodejs";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ orderId: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   try {
+    const ip = getClientIp(request);
+    if (ip && !(await rateLimit(`payment-claim:${ip}`, 20, 10 * 60 * 1000))) {
+      return NextResponse.json({ success: false, error: "Too many requests. Please try again later." }, { status: 429 });
+    }
+
     const { orderId } = await params;
     const order = await claimUpiPayment(orderId);
     return NextResponse.json({ success: true, order });

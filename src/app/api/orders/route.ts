@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createOrderFromCheckout, getMyOrders } from "../../../../backend/orders/service";
 import { getCurrentUser } from "../../../../backend/auth/service";
+import { rateLimit, getClientIp } from "../../../../backend/security/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -57,6 +58,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const ip = getClientIp(request);
+    if (ip && !(await rateLimit(`create-order:${ip}`, 10, 10 * 60 * 1000))) {
+      return NextResponse.json({ success: false, error: "Too many requests. Please try again later." }, { status: 429 });
+    }
+
     const body = createOrderSchema.parse(await request.json());
     const order = await createOrderFromCheckout(body);
     return NextResponse.json({ success: true, order }, { status: 201 });

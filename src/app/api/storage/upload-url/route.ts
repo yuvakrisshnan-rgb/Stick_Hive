@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ObjectId } from "mongodb";
 import { createCustomArtworkUpload } from "../../../../../backend/storage/uploads";
 import { getCurrentUser } from "../../../../../backend/auth/service";
-import { checkRateLimit, getClientIp } from "../../../../../backend/security/rate-limit";
+import { rateLimit, getClientIp } from "../../../../../backend/security/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,7 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const ip = getClientIp(request);
-    if (ip && !checkRateLimit(`upload-url:${ip}`, 20, 10 * 60 * 1000)) {
+    if (ip && !(await rateLimit(`upload-url:${ip}`, 20, 10 * 60 * 1000))) {
       return NextResponse.json({ success: false, error: "Too many requests. Please try again later." }, { status: 429 });
     }
 

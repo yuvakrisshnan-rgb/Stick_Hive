@@ -1,9 +1,22 @@
-// In-memory IP rate limiter. Only correct for a single running server
-// instance — counts live in process memory, so multiple instances (or a
-// serverless/edge deployment that spins up separate processes) would each
-// track their own counts and let the real per-IP limit multiply. Move to
-// Redis/Upstash (or similar shared store) before running more than one
-// instance.
+// Rate limiting with two tiers:
+//
+// 1. In-memory (always available, no setup) — correct for a single running
+//    server instance only. Counts live in process memory, so a serverless/
+//    edge deployment that spins up separate instances (this app is deployed
+//    on Vercel) would each track their own counts and let the real per-IP
+//    limit multiply across instances.
+// 2. Upstash Redis (opt-in, cross-instance-correct) — activates
+//    automatically once UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN
+//    are set. This is the one that's actually correct on Vercel.
+//
+// Nothing regresses if Upstash isn't configured: every call falls back to
+// the in-memory limiter rather than no-op'ing rate limiting entirely, so
+// routes stay at least as protected as before this file existed. Only the
+// Upstash-specific upgrade no-ops (falls back, with a one-time warning) if
+// its env vars are absent.
+
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
 type RateLimitEntry = {
   count: number;
@@ -21,6 +34,7 @@ function cleanupExpired(now: number): void {
   }
 }
 
+/** Synchronous, single-instance in-memory check — used directly, or as the fallback when Upstash isn't configured. */
 export function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
   const now = Date.now();
 
@@ -41,6 +55,71 @@ export function checkRateLimit(key: string, maxRequests: number, windowMs: numbe
 
   entry.count += 1;
   return true;
+}
+
+function isUpstashConfigured(): boolean {
+  return Boolean(process.env.UPSTASH_REDIS_REST_URL?.trim() && process.env.UPSTASH_REDIS_REST_TOKEN?.trim());
+}
+
+let upstashRedis: Redis | undefined;
+const upstashLimiters = new Map<string, Ratelimit>();
+let hasWarnedUpstashUnavailable = false;
+let hasWarnedUpstashError = false;
+
+function getUpstashLimiter(bucket: string, maxRequests: number, windowMs: number): Ratelimit {
+  const cacheKey = `${bucket}:${maxRequests}:${windowMs}`;
+  let limiter = upstashLimiters.get(cacheKey);
+  if (limiter) return limiter;
+
+  if (!upstashRedis) {
+    upstashRedis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  }
+
+  limiter = new Ratelimit({
+    redis: upstashRedis,
+    limiter: Ratelimit.slidingWindow(maxRequests, `${Math.max(1, Math.ceil(windowMs / 1000))} s`),
+    prefix: `stickhive-ratelimit:${bucket}`,
+  });
+  upstashLimiters.set(cacheKey, limiter);
+  return limiter;
+}
+
+/**
+ * The rate limiter routes should actually call. Uses Upstash (cross-instance
+ * correct) when UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN are set;
+ * otherwise falls back to the in-memory limiter (still real protection, just
+ * single-instance) rather than disabling rate limiting outright. If Upstash
+ * is configured but a request to it fails (network blip, bad credentials),
+ * also fails back to the in-memory limiter rather than either crashing the
+ * route or failing open with no limit at all.
+ */
+export async function rateLimit(key: string, maxRequests: number, windowMs: number): Promise<boolean> {
+  if (!isUpstashConfigured()) {
+    if (!hasWarnedUpstashUnavailable) {
+      hasWarnedUpstashUnavailable = true;
+      console.warn(
+        "[rate-limit] UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN not set — using single-instance in-memory rate limiting. " +
+          "Set both to get correct limits across multiple server instances (e.g. on Vercel).",
+      );
+    }
+    return checkRateLimit(key, maxRequests, windowMs);
+  }
+
+  try {
+    const [bucket] = key.split(":");
+    const limiter = getUpstashLimiter(bucket, maxRequests, windowMs);
+    const result = await limiter.limit(key);
+    return result.success;
+  } catch (error) {
+    if (!hasWarnedUpstashError) {
+      hasWarnedUpstashError = true;
+      console.warn("[rate-limit] Upstash request failed, falling back to in-memory rate limiting:", error instanceof Error ? error.message : error);
+    }
+    return checkRateLimit(key, maxRequests, windowMs);
+  }
 }
 
 let hasWarnedMissingIpHeader = false;

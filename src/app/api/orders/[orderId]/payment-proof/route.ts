@@ -5,6 +5,7 @@ import { getCurrentUser } from "../../../../../../backend/auth/service";
 import { getCollection } from "../../../../../../backend/db/mongodb";
 import { expireUpiForCustomer } from "../../../../../../backend/orders/service";
 import { getS3BucketName, getS3Client } from "../../../../../../backend/storage/s3";
+import { rateLimit, getClientIp } from "../../../../../../backend/security/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,11 @@ type OrderShape = {
 
 export async function POST(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   try {
+    const ip = getClientIp(request);
+    if (ip && !(await rateLimit(`payment-proof:${ip}`, 10, 10 * 60 * 1000))) {
+      return NextResponse.json({ success: false, error: "Too many requests. Please try again later." }, { status: 429 });
+    }
+
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
     const { orderId } = await params;
