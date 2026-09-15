@@ -230,6 +230,12 @@ export default function AdminPage() {
   const pending = useMemo(() => orders.filter((o) => o.paymentStatus === "pending_confirmation"), [orders]);
   const customOrders = useMemo(() => orders.filter((o) => o.items.some((item) => Boolean(item.artworkObjectKey))), [orders]);
 
+  const [statusFilter, setStatusFilter] = useState<"all" | (typeof fulfillmentStatuses)[number]>("all");
+  const filteredOrders = useMemo(
+    () => (statusFilter === "all" ? orders : orders.filter((o) => (o.status === "awaiting_payment" ? "placed" : o.status) === statusFilter)),
+    [orders, statusFilter],
+  );
+
   return (
     <main className="min-h-screen bg-cream px-5 pb-20 pt-28 md:px-8 md:pt-32">
       <div className="mx-auto max-w-7xl">
@@ -294,8 +300,37 @@ export default function AdminPage() {
               </section>
             )}
 
-            <div className="mt-8 space-y-6">
-              {orders.map((order) => {
+            <div className="mt-8 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setStatusFilter("all")}
+                className={`rounded-full px-4 py-2 text-xs font-extrabold ${statusFilter === "all" ? "bg-black text-white" : "bg-white text-black/60 hover:bg-black/5"}`}
+              >
+                All ({orders.length})
+              </button>
+              {fulfillmentStatuses.map((status) => {
+                const count = orders.filter((o) => (o.status === "awaiting_payment" ? "placed" : o.status) === status).length;
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setStatusFilter(status)}
+                    className={`rounded-full px-4 py-2 text-xs font-extrabold ${statusFilter === status ? "bg-black text-white" : "bg-white text-black/60 hover:bg-black/5"}`}
+                  >
+                    {status === "placed" ? "Confirmed / Placed" : statusLabel(status)} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {filteredOrders.length === 0 && (
+              <section className="mt-6 rounded-[2rem] bg-white p-10 text-center shadow-xl">
+                <p className="font-bold text-black/50">No orders match this filter.</p>
+              </section>
+            )}
+
+            <div className="mt-6 space-y-6">
+              {filteredOrders.map((order) => {
                 const customItems = order.items.map((item, index) => ({ item, index })).filter(({ item }) => Boolean(item.artworkObjectKey));
                 return (
                   <section key={order.orderId} className="overflow-hidden rounded-[2rem] bg-white shadow-xl">
