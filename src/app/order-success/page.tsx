@@ -877,6 +877,16 @@ function OrderSuccessContent() {
 
               {paymentCountdown && <div className="mx-auto mt-4 inline-flex rounded-full bg-black/[0.05] px-4 py-2 text-xs font-extrabold">{paymentCountdown}</div>}
 
+              {/* Tappable deep link — same upi:// URI as the QR, but lets a
+                  phone open its UPI app directly instead of needing a second
+                  device to scan. */}
+              <a
+                href={currentOrder.upiPayment.uri}
+                className="mx-auto mt-5 flex w-fit items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-bold transition hover:bg-black/5"
+              >
+                Open in UPI App
+              </a>
+
               <div className="mx-auto mt-5 max-w-md rounded-2xl bg-cream p-4 text-sm">
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-black/50">UPI ID</span>
