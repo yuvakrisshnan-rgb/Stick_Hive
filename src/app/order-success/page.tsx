@@ -10,6 +10,7 @@ import QRCode from "qrcode";
 
 import Link from "next/link";
 import Image from "next/image";
+import Script from "next/script";
 
 import {
   useSearchParams,
@@ -46,6 +47,31 @@ import type {
 // this shape, which had quietly drifted (missing shippingDetails, etc.).
 
 type Address = StoredOrder["customer"]["address"];
+
+type RazorpaySuccessResponse = {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+};
+
+type RazorpayCheckoutOptions = {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill: { name: string; email: string; contact: string };
+  theme: { color: string };
+  handler: (response: RazorpaySuccessResponse) => void;
+  modal: { ondismiss: () => void };
+};
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => { open: () => void };
+  }
+}
 
 
 // ============================================================================
@@ -260,6 +286,11 @@ function OrderSuccessContent() {
 
   const [isRetryingPayment, setIsRetryingPayment] = useState(false);
   const [paymentCountdown, setPaymentCountdown] = useState("");
+
+  const [isRazorpayScriptReady, setIsRazorpayScriptReady] = useState(false);
+  const [isStartingRazorpay, setIsStartingRazorpay] = useState(false);
+  const [isConfirmingRazorpay, setIsConfirmingRazorpay] = useState(false);
+  const [razorpayError, setRazorpayError] = useState("");
 
 
   // ==========================================================================
@@ -600,6 +631,84 @@ function OrderSuccessContent() {
     }
   }
 
+  // ==========================================================================
+  // RAZORPAY
+  // ==========================================================================
+  //
+  // The webhook (POST /api/payments/razorpay/webhook) is the sole
+  // authoritative source that marks the order "paid" - this handler only
+  // gives the customer immediate feedback and then polls the order until
+  // that webhook-driven update lands.
+
+  async function pollForRazorpayConfirmation() {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      try {
+        const response = await fetch(`/api/orders/${encodeURIComponent(currentOrder.orderId)}`, { cache: "no-store" });
+        const data = await response.json();
+        if (response.ok && data?.success && data.order) {
+          setOrder(data.order as StoredOrder);
+          if (data.order.paymentStatus === "paid") {
+            setIsConfirmingRazorpay(false);
+            return;
+          }
+        }
+      } catch {
+        // Keep trying - a transient network blip shouldn't abandon the poll.
+      }
+    }
+    setIsConfirmingRazorpay(false);
+    setRazorpayError("Payment is taking a little longer to confirm than usual. This page will update automatically once it's done — you can also refresh it in a minute.");
+  }
+
+  async function handlePayWithRazorpay() {
+    setRazorpayError("");
+    if (!isRazorpayScriptReady || !window.Razorpay) {
+      setRazorpayError("Payment is still loading — please try again in a moment.");
+      return;
+    }
+
+    setIsStartingRazorpay(true);
+    try {
+      const response = await fetch("/api/payments/razorpay/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: currentOrder.orderId }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) throw new Error(data?.error ?? "Unable to start payment.");
+
+      const razorpay = new window.Razorpay({
+        key: data.keyId,
+        amount: data.amount,
+        currency: data.currency,
+        name: "Stick Hive",
+        description: `Order ${currentOrder.orderId}`,
+        order_id: data.razorpayOrderId,
+        prefill: {
+          name: currentOrder.customer.name,
+          email: currentOrder.customer.email,
+          contact: currentOrder.customer.phone,
+        },
+        theme: { color: "#111111" },
+        handler: () => {
+          setIsStartingRazorpay(false);
+          setIsConfirmingRazorpay(true);
+          void pollForRazorpayConfirmation();
+        },
+        modal: {
+          ondismiss: () => {
+            setIsStartingRazorpay(false);
+          },
+        },
+      });
+      razorpay.open();
+    } catch (error) {
+      setRazorpayError(error instanceof Error ? error.message : "Unable to start payment.");
+      setIsStartingRazorpay(false);
+    }
+  }
+
 
   // ==========================================================================
   // DOWNLOAD INVOICE
@@ -693,6 +802,12 @@ function OrderSuccessContent() {
         pt-32
       "
     >
+
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="afterInteractive"
+        onLoad={() => setIsRazorpayScriptReady(true)}
+      />
 
       <div
         className="
@@ -914,6 +1029,49 @@ function OrderSuccessContent() {
 
               {paymentMessage && (
                 <p className="mt-3 text-sm font-semibold text-black/60">{paymentMessage}</p>
+              )}
+            </div>
+          </section>
+        )}
+
+
+        {/* ================================================================== */}
+        {/* RAZORPAY PAYMENT                                                   */}
+        {/* ================================================================== */}
+
+        {currentOrder.paymentMethod === "razorpay" && currentOrder.paymentStatus !== "paid" && currentOrder.paymentStatus !== "cancelled" && (
+          <section className="mt-6 rounded-[2rem] bg-white p-6 shadow-xl md:p-8">
+            <div className="text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-black/40">
+                Complete Payment
+              </p>
+              <h2 className="mt-2 text-2xl font-extrabold md:text-3xl">
+                Pay ₹{currentOrder.total.toFixed(2)}
+              </h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-black/50">
+                Cards, UPI apps, netbanking and more via Razorpay. Confirmation is instant once your bank approves it.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => void handlePayWithRazorpay()}
+                disabled={isStartingRazorpay || isConfirmingRazorpay}
+                className="mx-auto mt-6 flex w-full max-w-sm items-center justify-center gap-2 rounded-full bg-black px-6 py-4 font-bold text-white transition hover:scale-[1.01] hover:bg-honey-orange disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 disabled:hover:bg-black"
+              >
+                {isConfirmingRazorpay ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Confirming payment…
+                  </>
+                ) : isStartingRazorpay ? (
+                  "Opening payment…"
+                ) : (
+                  "Pay Now"
+                )}
+              </button>
+
+              {razorpayError && (
+                <p className="mt-3 text-sm font-semibold text-red-600">{razorpayError}</p>
               )}
             </div>
           </section>
@@ -1407,6 +1565,28 @@ function OrderSuccessContent() {
             </div>
 
 
+            {Boolean(currentOrder.platformFee) && (
+              <div
+                className="
+                  mt-3
+                  flex
+                  justify-between
+                  text-sm
+                "
+              >
+
+                <span>
+                  Platform fee (2.36%)
+                </span>
+
+                <span>
+                  ₹{currentOrder.platformFee!.toFixed(2)}
+                </span>
+
+              </div>
+            )}
+
+
             <div
               className="
                 mt-4
@@ -1468,7 +1648,7 @@ function OrderSuccessContent() {
                   capitalize
                 "
               >
-                {currentOrder.paymentMethod === "stripe" ? "Stripe" : "UPI"}
+                {currentOrder.paymentMethod === "razorpay" ? "Razorpay" : currentOrder.paymentMethod === "stripe" ? "Stripe" : "UPI"}
               </span>
 
             </div>

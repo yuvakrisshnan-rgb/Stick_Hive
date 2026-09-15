@@ -7,6 +7,17 @@ export const FREE_SHIPPING_THRESHOLD = 200;
 
 export const SHIPPING_FEE = 40;
 
+// Razorpay charges 2% + 18% GST on that 2% per successful transaction
+// (2% * 1.18 = 2.36%). This is passed to the customer as a disclosed line
+// item, not absorbed into product price. Shared between the server (order
+// creation, the source of truth) and the client (checkout display) so the
+// two can never drift.
+export const RAZORPAY_PLATFORM_FEE_RATE = 0.0236;
+
+export function getRazorpayPlatformFee(baseTotal: number): number {
+  return Math.round(baseTotal * RAZORPAY_PLATFORM_FEE_RATE * 100) / 100;
+}
+
 export function getNormalCartSubtotal(
   lines: CartLineDetailed[],
 ): number {

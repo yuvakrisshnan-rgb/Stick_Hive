@@ -30,7 +30,7 @@ export type OrderStatus =
 // by src/app/checkout/page.tsx.
 // ============================================================================
 
-export type PaymentMethod = "upi" | "stripe";
+export type PaymentMethod = "upi" | "stripe" | "razorpay";
 
 export type PaymentStatus =
   | "pending"
@@ -222,5 +222,11 @@ export type StoredOrder = {
 
   shipping: number;
 
+  /** Only present for paymentMethod "razorpay" — see getRazorpayPlatformFee. Already included in `total`. */
+  platformFee?: number;
+
   total: number;
+
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
 };

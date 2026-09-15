@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -29,6 +30,10 @@ import { useShop } from "@/components/shop/store-provider";
 import {
   saveAddress,
 } from "@/lib/address-storage";
+
+import {
+  getRazorpayPlatformFee,
+} from "@/lib/cart/calculations";
 
 
 
@@ -100,7 +105,42 @@ export default function CheckoutPage() {
     setEmailVerified,
   ] = useState(false);
 
-  const paymentMethod = "upi" as const;
+
+  // ==========================================================================
+  // PAYMENT METHOD
+  // ==========================================================================
+  // Razorpay is the default/primary path; UPI-direct remains as a fallback,
+  // e.g. if Razorpay isn't configured in this environment.
+
+  const [
+    paymentMethod,
+    setPaymentMethod,
+  ] = useState<"razorpay" | "upi">("razorpay");
+
+  const [
+    razorpayEnabled,
+    setRazorpayEnabled,
+  ] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/payments/razorpay/status")
+      .then((response) => response.json())
+      .then((data) => {
+        if (!active) return;
+        setRazorpayEnabled(Boolean(data?.enabled));
+        if (!data?.enabled) setPaymentMethod("upi");
+      })
+      .catch(() => {
+        if (active) {
+          setRazorpayEnabled(false);
+          setPaymentMethod("upi");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
 
   // ==========================================================================
@@ -117,6 +157,18 @@ export default function CheckoutPage() {
     orderError,
     setOrderError,
   ] = useState("");
+
+
+  // ==========================================================================
+  // FEE / TOTALS
+  // ==========================================================================
+
+  const platformFee =
+    paymentMethod === "razorpay"
+      ? getRazorpayPlatformFee(cartTotal)
+      : 0;
+
+  const grandTotal = cartTotal + platformFee;
 
 
   // ==========================================================================
@@ -387,7 +439,7 @@ export default function CheckoutPage() {
       localStorage.setItem("stickhive:last-order", JSON.stringify(order));
 
       clearAllCart();
-      window.location.href = `/order-success?orderId=${encodeURIComponent(order.orderId)}&payment=upi`;
+      window.location.href = `/order-success?orderId=${encodeURIComponent(order.orderId)}&payment=${paymentMethod}`;
     } catch (error) {
       console.error("Unable to place Stick Hive order:", error);
       setOrderError(error instanceof Error ? error.message : "Something went wrong while placing your order.");
@@ -834,6 +886,37 @@ export default function CheckoutPage() {
               </div>
 
 
+              {platformFee > 0 && (
+                <div
+                  className="
+                    flex
+                    items-center
+                    justify-between
+                    text-sm
+                  "
+                >
+
+                  <span
+                    className="
+                      text-black/60
+                    "
+                  >
+                    Platform fee (2.36%)
+                  </span>
+
+
+                  <span
+                    className="
+                      font-semibold
+                    "
+                  >
+                    ₹{platformFee.toFixed(2)}
+                  </span>
+
+                </div>
+              )}
+
+
               <div
                 className="
                   flex
@@ -859,7 +942,7 @@ export default function CheckoutPage() {
                     font-extrabold
                   "
                 >
-                  ₹{cartTotal}
+                  ₹{grandTotal.toFixed(2)}
                 </span>
 
               </div>
@@ -876,19 +959,51 @@ export default function CheckoutPage() {
                 Payment Method
               </p>
 
-              <div className="w-full rounded-2xl border border-black bg-black p-4 text-left text-white">
+              {razorpayEnabled !== false && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("razorpay")}
+                  className={
+                    paymentMethod === "razorpay"
+                      ? "w-full rounded-2xl border border-black bg-black p-4 text-left text-white transition"
+                      : "w-full rounded-2xl border border-black/10 p-4 text-left transition hover:bg-black/5"
+                  }
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={paymentMethod === "razorpay" ? "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black" : "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-black/5 text-sm font-black"}>
+                      ₹
+                    </div>
+                    <div>
+                      <p className="font-bold">Cards, UPI apps &amp; more (Razorpay)</p>
+                      <p className={paymentMethod === "razorpay" ? "mt-1 text-xs leading-relaxed opacity-70" : "mt-1 text-xs leading-relaxed text-black/50"}>
+                        Instant confirmation - no waiting for manual verification. Includes a 2.36% platform fee.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("upi")}
+                className={
+                  paymentMethod === "upi"
+                    ? "w-full rounded-2xl border border-black bg-black p-4 text-left text-white transition"
+                    : "w-full rounded-2xl border border-black/10 p-4 text-left transition hover:bg-black/5"
+                }
+              >
                 <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black">
+                  <div className={paymentMethod === "upi" ? "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black" : "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-black/5 text-sm font-black"}>
                     ₹
                   </div>
                   <div>
-                    <p className="font-bold">UPI</p>
-                    <p className="mt-1 text-xs leading-relaxed opacity-70">
-                      You&apos;ll get a Stick Hive payment QR after your order is created.
+                    <p className="font-bold">UPI (direct)</p>
+                    <p className={paymentMethod === "upi" ? "mt-1 text-xs leading-relaxed opacity-70" : "mt-1 text-xs leading-relaxed text-black/50"}>
+                      You&apos;ll get a Stick Hive payment QR after your order is created. Verified manually - may take longer to confirm.
                     </p>
                   </div>
                 </div>
-              </div>
+              </button>
             </div>
 
             {orderError && (
@@ -988,7 +1103,7 @@ export default function CheckoutPage() {
                 <>
 
                   <span>
-                    Place Order with UPI
+                    {paymentMethod === "razorpay" ? "Continue to Payment" : "Place Order with UPI"}
                   </span>
 
                   <ArrowRight

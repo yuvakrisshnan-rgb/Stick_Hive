@@ -34,7 +34,7 @@ const itemSchema = z.discriminatedUnion("type", [
 ]);
 
 const createOrderSchema = z.object({
-  paymentMethod: z.literal("upi"),
+  paymentMethod: z.enum(["upi", "razorpay"]),
   customer: z.object({
     name: z.string().trim().min(1).max(100),
     email: z.string().email().max(254),

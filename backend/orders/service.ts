@@ -9,7 +9,7 @@ import {
   priceFor,
   type StickerSize,
 } from "../../src/lib/product-data";
-import { FREE_SHIPPING_THRESHOLD, SHIPPING_FEE } from "../../src/lib/cart/calculations";
+import { FREE_SHIPPING_THRESHOLD, SHIPPING_FEE, getRazorpayPlatformFee } from "../../src/lib/cart/calculations";
 
 const UPI_PAYMENT_WINDOW_MINUTES = 20;
 
@@ -59,10 +59,14 @@ export type OrderDocument = {
   orderId: string;
   createdAt: Date;
   status: "awaiting_payment" | "placed" | "processing" | "packed" | "shipped" | "out_for_delivery" | "delivered" | "cancelled";
-  paymentMethod: "upi" | "stripe";
+  paymentMethod: "upi" | "stripe" | "razorpay";
   paymentStatus: PaymentStatus;
   stripeSessionId?: string;
   stripePaymentIntentId?: string;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  /** Only set for paymentMethod "razorpay" — see getRazorpayPlatformFee. Included in `total`. */
+  platformFee?: number;
   paymentClaimedAt?: Date;
   paymentAttempt?: number;
   paymentExpiresAt?: Date;
@@ -245,7 +249,7 @@ function getUpiPaymentDetails(orderId: string, total: number, attempt = 1) {
 export async function createOrderFromCheckout(input: {
   customer: CheckoutCustomer;
   items: CheckoutItemInput[];
-  paymentMethod: "upi" | "stripe";
+  paymentMethod: "upi" | "stripe" | "razorpay";
 }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
@@ -319,10 +323,16 @@ export async function createOrderFromCheckout(input: {
     }
 
     const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
-    const total = subtotal + shipping;
+    const baseTotal = subtotal + shipping;
+    // Never trust a client-sent total or fee — always recompute server-side
+    // from the same shared formula the checkout UI displays (see
+    // getRazorpayPlatformFee in src/lib/cart/calculations.ts).
+    const platformFee = input.paymentMethod === "razorpay" ? getRazorpayPlatformFee(baseTotal) : undefined;
+    const total = baseTotal + (platformFee ?? 0);
     const createdAt = new Date();
-    const paymentStatus: PaymentStatus = input.paymentMethod === "upi" ? "pending" : "pending";
+    const paymentStatus: PaymentStatus = "pending";
     const paymentAttempt = 1;
+    const requiresExternalConfirmation = input.paymentMethod === "upi" || input.paymentMethod === "razorpay";
     const paymentExpiresAt = input.paymentMethod === "upi"
       ? new Date(createdAt.getTime() + UPI_PAYMENT_WINDOW_MINUTES * 60 * 1000)
       : undefined;
@@ -332,10 +342,11 @@ export async function createOrderFromCheckout(input: {
       userId,
       orderId,
       createdAt,
-      status: input.paymentMethod === "upi" ? "awaiting_payment" : "placed",
+      status: requiresExternalConfirmation ? "awaiting_payment" : "placed",
       paymentMethod: input.paymentMethod,
       paymentStatus,
       ...(input.paymentMethod === "upi" ? { paymentAttempt, paymentExpiresAt } : {}),
+      ...(platformFee !== undefined ? { platformFee } : {}),
       customer,
       items: normalizedItems,
       subtotal,
@@ -346,10 +357,11 @@ export async function createOrderFromCheckout(input: {
     const serializedOrder = {
       orderId,
       createdAt: createdAt.toISOString(),
-      status: input.paymentMethod === "upi" ? "awaiting_payment" : "placed",
+      status: requiresExternalConfirmation ? "awaiting_payment" : "placed",
       paymentMethod: input.paymentMethod,
       paymentStatus,
       ...(input.paymentMethod === "upi" ? { paymentAttempt, paymentExpiresAt: paymentExpiresAt!.toISOString() } : {}),
+      ...(platformFee !== undefined ? { platformFee } : {}),
       customer,
       items: normalizedItems,
       subtotal,
@@ -431,6 +443,53 @@ export async function setStripePaymentState(params: {
     { stripeSessionId: params.sessionId },
     { $set: update },
   );
+}
+
+export async function attachRazorpayOrder(orderId: string, razorpayOrderId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated.");
+  const collection = await getCollection<OrderDocument>("orders");
+  const result = await collection.updateOne(
+    { orderId, userId: new ObjectId(user.id), paymentMethod: "razorpay", paymentStatus: "pending" },
+    { $set: { razorpayOrderId } },
+  );
+  if (!result.matchedCount) throw new Error("Order is unavailable for payment.");
+}
+
+/**
+ * Called ONLY from the Razorpay webhook route, after its signature has been
+ * verified — this is the sole automated path allowed to mark a Razorpay
+ * order "paid" (unlike Google Pay's auto-check, which may only suggest —
+ * see paymentAutoVerification). Idempotent: the paymentStatus: { $ne: "paid" }
+ * filter means a duplicate/retried webhook delivery for an already-processed
+ * event is a silent no-op rather than a double-write.
+ */
+export async function setRazorpayPaymentState(params: {
+  razorpayOrderId: string;
+  paymentStatus: Extract<PaymentStatus, "paid" | "failed" | "cancelled">;
+  razorpayPaymentId?: string;
+}) {
+  const collection = await getCollection<OrderDocument>("orders");
+  const existing = await collection.findOne({ razorpayOrderId: params.razorpayOrderId });
+  if (!existing) return { matched: false as const };
+  if (existing.paymentStatus === "paid") return { matched: true as const, alreadyProcessed: true as const, order: existing };
+
+  const update: Record<string, unknown> = { paymentStatus: params.paymentStatus, updatedAt: new Date() };
+  if (params.razorpayPaymentId) update.razorpayPaymentId = params.razorpayPaymentId;
+  if (params.paymentStatus === "paid") {
+    update.status = existing.status === "awaiting_payment" ? "placed" : existing.status;
+  } else if (existing.status === "awaiting_payment") {
+    update.status = "awaiting_payment"; // stays put — customer can retry, order isn't dead-ended
+  }
+
+  const result = await collection.updateOne(
+    { razorpayOrderId: params.razorpayOrderId, paymentStatus: { $ne: "paid" } },
+    { $set: update },
+  );
+  if (result.matchedCount === 0) return { matched: true as const, alreadyProcessed: true as const, order: existing };
+
+  const updated = await collection.findOne({ razorpayOrderId: params.razorpayOrderId });
+  return { matched: true as const, alreadyProcessed: false as const, order: updated ?? existing };
 }
 
 export type FulfillmentStatus = Exclude<OrderDocument["status"], "awaiting_payment">;
@@ -643,6 +702,9 @@ function serializeOrder(order: OrderDocument) {
     subtotal: order.subtotal,
     shipping: order.shipping,
     total: order.total,
+    platformFee: order.platformFee,
+    razorpayOrderId: order.razorpayOrderId,
+    razorpayPaymentId: order.razorpayPaymentId,
     shippingDetails: order.shippingDetails
       ? {
           ...order.shippingDetails,

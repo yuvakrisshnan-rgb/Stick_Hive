@@ -465,6 +465,7 @@ export default function AdminPage() {
                         </div>
                         <div className="lg:text-right">
                           <p className="text-3xl font-extrabold">₹{order.total.toFixed(2)}</p>
+                          {Boolean(order.platformFee) && <p className="mt-1 text-xs font-semibold text-black/40">incl. ₹{order.platformFee!.toFixed(2)} platform fee</p>}
                           <p className="mt-1 text-sm text-black/50">{new Date(order.createdAt).toLocaleString("en-IN")}</p>
                           <div className="mt-3 inline-flex rounded-full bg-black/[0.04] px-3 py-1.5 text-xs font-extrabold capitalize">{statusLabel(order.status)}</div>
                         </div>
@@ -533,7 +534,7 @@ export default function AdminPage() {
 
                       <aside className="border-t border-black/10 bg-black/[0.02] p-6 md:p-7 lg:border-l lg:border-t-0">
                         <div className="rounded-3xl bg-white p-5 shadow-sm">
-                          <p className="text-xs font-bold uppercase tracking-widest text-black/40">Payment</p>
+                          <p className="text-xs font-bold uppercase tracking-widest text-black/40">Payment · {order.paymentMethod === "razorpay" ? "Razorpay" : order.paymentMethod === "stripe" ? "Stripe" : "UPI"}</p>
                           <p className="mt-2 text-lg font-extrabold capitalize">{statusLabel(order.paymentStatus ?? "pending")}</p>
                           {order.paymentClaimedAt && <p className="mt-1 text-xs text-black/40">Claimed {new Date(order.paymentClaimedAt).toLocaleString("en-IN")}</p>}
                           {order.paymentExpiresAt && order.paymentStatus !== "paid" && <p className="mt-1 text-xs font-bold text-black/50">Payment window: {paymentRemaining(order.paymentExpiresAt) ?? "Expired"}</p>}
@@ -563,15 +564,23 @@ export default function AdminPage() {
                               <p className="text-black/40">Verified by {order.paymentVerification.verifiedBy}</p>
                             </div>
                           )}
+                          {order.paymentStatus === "paid" && order.paymentMethod === "razorpay" && (
+                            <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.025] p-4 text-xs leading-5">
+                              <p className="font-extrabold">Confirmed automatically via Razorpay webhook</p>
+                              {order.razorpayPaymentId && <p className="mt-1 text-black/60">Payment ID: {order.razorpayPaymentId}</p>}
+                              {order.platformFee !== undefined && <p className="text-black/60">Platform fee: ₹{order.platformFee.toFixed(2)}</p>}
+                            </div>
+                          )}
                         </div>
 
                         <label className="mt-4 block rounded-3xl bg-white p-5 shadow-sm">
                           <span className="text-xs font-bold uppercase tracking-widest text-black/40">Fulfillment</span>
-                          <select value={order.status === "awaiting_payment" ? "placed" : order.status} onChange={(e) => void update(order.orderId, { status: e.target.value as typeof fulfillmentStatuses[number] })} disabled={busy === order.orderId || (order.paymentMethod === "upi" && order.paymentStatus !== "paid")} className="mt-3 w-full rounded-2xl border border-black/10 bg-white px-3 py-3 text-sm font-bold outline-none disabled:cursor-not-allowed disabled:opacity-50">
+                          <select value={order.status === "awaiting_payment" ? "placed" : order.status} onChange={(e) => void update(order.orderId, { status: e.target.value as typeof fulfillmentStatuses[number] })} disabled={busy === order.orderId || ((order.paymentMethod === "upi" || order.paymentMethod === "razorpay") && order.paymentStatus !== "paid")} className="mt-3 w-full rounded-2xl border border-black/10 bg-white px-3 py-3 text-sm font-bold outline-none disabled:cursor-not-allowed disabled:opacity-50">
                             <option value="placed">Confirmed / Placed</option>
                             {fulfillmentStatuses.filter((status) => status !== "placed").map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
                           </select>
                           {order.paymentMethod === "upi" && order.paymentStatus !== "paid" && <p className="mt-2 text-xs font-semibold text-black/45">Fulfillment is locked until UPI payment is verified.</p>}
+                          {order.paymentMethod === "razorpay" && order.paymentStatus !== "paid" && <p className="mt-2 text-xs font-semibold text-black/45">Fulfillment is locked until Razorpay confirms payment.</p>}
                         </label>
 
                         <div className="mt-4 rounded-3xl bg-white p-5 shadow-sm">
