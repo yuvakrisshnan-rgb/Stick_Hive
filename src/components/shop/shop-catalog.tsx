@@ -35,6 +35,8 @@ import {
   ProductCard,
 } from "@/components/products/product-card"
 
+import ShopAmbientBackground from "@/components/shop/ambient-background"
+
 
 // ============================================================================
 // TYPES
@@ -445,6 +447,8 @@ export default function ShopCatalog() {
         pb-24
       "
     >
+
+      <ShopAmbientBackground />
 
       {/* ================================================================== */}
       {/* HERO                                                               */}

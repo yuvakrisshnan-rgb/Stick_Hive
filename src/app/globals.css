@@ -244,6 +244,105 @@ h6 {
 
 
 /* ========================================================================= */
+/* SHOP AMBIENT BACKGROUND                                                   */
+/* ========================================================================= */
+
+@keyframes ambient-drift-a {
+
+  0%, 100% {
+    transform:
+      translate(0, 0)
+      scale(1);
+  }
+
+  50% {
+    transform:
+      translate(4%, 6%)
+      scale(1.08);
+  }
+
+}
+
+
+@keyframes ambient-drift-b {
+
+  0%, 100% {
+    transform:
+      translate(0, 0)
+      scale(1);
+  }
+
+  50% {
+    transform:
+      translate(-5%, -4%)
+      scale(1.06);
+  }
+
+}
+
+
+@keyframes ambient-drift-c {
+
+  0%, 100% {
+    transform:
+      translate(0, 0)
+      scale(1);
+  }
+
+  50% {
+    transform:
+      translate(-3%, 5%)
+      scale(1.1);
+  }
+
+}
+
+
+.animate-ambient-drift-a {
+
+  animation:
+    ambient-drift-a
+    22s
+    ease-in-out
+    infinite;
+
+}
+
+
+.animate-ambient-drift-b {
+
+  animation:
+    ambient-drift-b
+    26s
+    ease-in-out
+    infinite;
+
+}
+
+
+.animate-ambient-drift-c {
+
+  animation:
+    ambient-drift-c
+    19s
+    ease-in-out
+    infinite;
+
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  .animate-ambient-drift-a,
+  .animate-ambient-drift-b,
+  .animate-ambient-drift-c {
+    animation: none;
+  }
+
+}
+
+
+/* ========================================================================= */
 /* CUSTOM SCROLLBAR                                                          */
 /* ========================================================================= */
 
