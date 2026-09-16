@@ -1,6 +1,5 @@
 import { CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { ObjectId } from "mongodb";
-import { getCollection } from "../db/mongodb";
+import { getD1, nowIso } from "../db/d1";
 import { getCurrentUser, isAdminUser } from "../auth/service";
 import { getS3BucketName, getS3Client } from "../storage/s3";
 import {
@@ -53,9 +52,16 @@ export type CheckoutItemInput =
       artworkContentType: string;
     };
 
+/**
+ * The materialized, in-memory shape of an order - joined from the `orders`
+ * + `order_items` D1 tables (see rowToOrder below) into the same shape the
+ * Mongo document used to have, Date fields included. Every function past
+ * the D1 read/write boundary (serializeOrder, expireUpiPaymentIfNeeded,
+ * updateAdminOrder, etc.) operates on this shape unchanged, so only the
+ * I/O boundary needed to change for this migration.
+ */
 export type OrderDocument = {
-  _id?: ObjectId;
-  userId: ObjectId;
+  userId: string;
   orderId: string;
   createdAt: Date;
   status: "awaiting_payment" | "placed" | "processing" | "packed" | "shipped" | "out_for_delivery" | "delivered" | "cancelled";
@@ -142,6 +148,152 @@ export type OrderDocument = {
   };
 };
 
+type OrderRow = {
+  order_id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string | null;
+  status: OrderDocument["status"];
+  payment_method: OrderDocument["paymentMethod"];
+  payment_status: PaymentStatus;
+  stripe_session_id: string | null;
+  stripe_payment_intent_id: string | null;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+  platform_fee: number | null;
+  payment_claimed_at: string | null;
+  payment_attempt: number | null;
+  payment_expires_at: string | null;
+  customer: string;
+  subtotal: number;
+  shipping: number;
+  total: number;
+  payment_verification: string | null;
+  payment_auto_verification: string | null;
+  payment_proof: string | null;
+  shipping_details: string | null;
+};
+
+type OrderItemRow = {
+  id: number;
+  order_id: string;
+  position: number;
+  type: "product" | "custom";
+  product_id: string | null;
+  product_name: string;
+  image_url: string | null;
+  artwork_object_key: string | null;
+  artwork_content_type: string | null;
+  size: string;
+  shape: string | null;
+  finish: string | null;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+};
+
+function itemRowToItem(row: OrderItemRow): OrderDocument["items"][number] {
+  return {
+    type: row.type,
+    productId: row.product_id ?? undefined,
+    productName: row.product_name,
+    imageUrl: row.image_url ?? undefined,
+    artworkObjectKey: row.artwork_object_key ?? undefined,
+    artworkContentType: row.artwork_content_type ?? undefined,
+    size: row.size,
+    shape: row.shape ?? undefined,
+    finish: row.finish ?? undefined,
+    quantity: row.quantity,
+    unitPrice: row.unit_price,
+    lineTotal: row.line_total,
+  };
+}
+
+function rowToOrder(row: OrderRow, itemRows: OrderItemRow[]): OrderDocument {
+  const paymentVerification = row.payment_verification ? JSON.parse(row.payment_verification) : undefined;
+  const paymentAutoVerification = row.payment_auto_verification ? JSON.parse(row.payment_auto_verification) : undefined;
+  const paymentProof = row.payment_proof ? JSON.parse(row.payment_proof) : undefined;
+  const shippingDetails = row.shipping_details ? JSON.parse(row.shipping_details) : undefined;
+
+  return {
+    userId: row.user_id,
+    orderId: row.order_id,
+    createdAt: new Date(row.created_at),
+    status: row.status,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    stripeSessionId: row.stripe_session_id ?? undefined,
+    stripePaymentIntentId: row.stripe_payment_intent_id ?? undefined,
+    razorpayOrderId: row.razorpay_order_id ?? undefined,
+    razorpayPaymentId: row.razorpay_payment_id ?? undefined,
+    platformFee: row.platform_fee ?? undefined,
+    paymentClaimedAt: row.payment_claimed_at ? new Date(row.payment_claimed_at) : undefined,
+    paymentAttempt: row.payment_attempt ?? undefined,
+    paymentExpiresAt: row.payment_expires_at ? new Date(row.payment_expires_at) : undefined,
+    paymentVerification: paymentVerification
+      ? { ...paymentVerification, paidAt: new Date(paymentVerification.paidAt), verifiedAt: new Date(paymentVerification.verifiedAt) }
+      : undefined,
+    paymentAutoVerification: paymentAutoVerification
+      ? { ...paymentAutoVerification, paidAt: new Date(paymentAutoVerification.paidAt), detectedAt: new Date(paymentAutoVerification.detectedAt) }
+      : undefined,
+    paymentProof: paymentProof ? { ...paymentProof, uploadedAt: new Date(paymentProof.uploadedAt) } : undefined,
+    customer: JSON.parse(row.customer),
+    items: itemRows.map(itemRowToItem),
+    subtotal: row.subtotal,
+    shipping: row.shipping,
+    total: row.total,
+    shippingDetails: shippingDetails
+      ? {
+          ...shippingDetails,
+          shippedAt: shippingDetails.shippedAt ? new Date(shippingDetails.shippedAt) : undefined,
+          deliveredAt: shippingDetails.deliveredAt ? new Date(shippingDetails.deliveredAt) : undefined,
+          lastCarrierStatusAt: shippingDetails.lastCarrierStatusAt ? new Date(shippingDetails.lastCarrierStatusAt) : undefined,
+          outForDeliveryEmailSentAt: shippingDetails.outForDeliveryEmailSentAt ? new Date(shippingDetails.outForDeliveryEmailSentAt) : undefined,
+          updatedAt: new Date(shippingDetails.updatedAt),
+          delhivery: shippingDetails.delhivery
+            ? { ...shippingDetails.delhivery, createdAt: new Date(shippingDetails.delhivery.createdAt) }
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
+async function loadOrderItems(db: D1Database, orderId: string): Promise<OrderItemRow[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY position ASC")
+    .bind(orderId)
+    .all<OrderItemRow>();
+  return results;
+}
+
+async function loadOrderByOrderId(db: D1Database, orderId: string): Promise<OrderDocument | null> {
+  const row = await db.prepare("SELECT * FROM orders WHERE order_id = ?").bind(orderId).first<OrderRow>();
+  if (!row) return null;
+  return rowToOrder(row, await loadOrderItems(db, orderId));
+}
+
+async function loadOrderByRazorpayOrderId(db: D1Database, razorpayOrderId: string): Promise<OrderDocument | null> {
+  const row = await db.prepare("SELECT * FROM orders WHERE razorpay_order_id = ?").bind(razorpayOrderId).first<OrderRow>();
+  if (!row) return null;
+  return rowToOrder(row, await loadOrderItems(db, row.order_id));
+}
+
+async function hydrateOrders(db: D1Database, orderRows: OrderRow[]): Promise<OrderDocument[]> {
+  if (orderRows.length === 0) return [];
+  const placeholders = orderRows.map(() => "?").join(",");
+  const { results: itemRows } = await db
+    .prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, position ASC`)
+    .bind(...orderRows.map((r) => r.order_id))
+    .all<OrderItemRow>();
+  const itemsByOrder = new Map<string, OrderItemRow[]>();
+  for (const item of itemRows) {
+    const list = itemsByOrder.get(item.order_id) ?? [];
+    list.push(item);
+    itemsByOrder.set(item.order_id, list);
+  }
+  return orderRows.map((row) => rowToOrder(row, itemsByOrder.get(row.order_id) ?? []));
+}
+
 const PRODUCT_BY_ID = new Map(PRODUCTS.map((product) => [product.id, product]));
 const MAX_QUANTITY = 10;
 
@@ -184,13 +336,18 @@ function normalizeCustomer(input: CheckoutCustomer): CheckoutCustomer {
   };
 }
 
-function validateArtworkKey(key: string, userId: ObjectId): boolean {
-  return key.startsWith(`custom-art/temp/${userId.toHexString()}/`) &&
-    /^custom-art\/temp\/[a-f0-9]{24}\/[0-9a-f-]+\.(png|jpg|webp)$/.test(key);
+// D1-based user ids are crypto.randomUUID() strings (see backend/auth/service.ts,
+// Task 2), not Mongo ObjectId hex - the temp-upload key prefix (see
+// backend/storage/uploads.ts) is validated against that same UUID shape.
+const UUID_RE = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+function validateArtworkKey(key: string, userId: string): boolean {
+  return key.startsWith(`custom-art/temp/${userId}/`) &&
+    new RegExp(`^custom-art/temp/${UUID_RE}/[0-9a-f-]+\\.(png|jpg|webp)$`).test(key);
 }
 
 async function finalizeArtwork(
-  userId: ObjectId,
+  userId: string,
   orderId: string,
   item: Extract<CheckoutItemInput, { type: "custom" }>,
 ): Promise<string> {
@@ -213,7 +370,7 @@ async function finalizeArtwork(
       purpose: "stickhive-custom-artwork",
       "order-id": orderId,
       "custom-line-id": item.cartLineId,
-      "user-id": userId.toHexString(),
+      "user-id": userId,
     },
   }));
 
@@ -253,7 +410,7 @@ export async function createOrderFromCheckout(input: {
 }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
-  const userId = new ObjectId(user.id);
+  const userId = user.id;
 
   const customer = normalizeCustomer(input.customer);
   if (customer.email !== user.email) {
@@ -336,28 +493,64 @@ export async function createOrderFromCheckout(input: {
     const paymentExpiresAt = input.paymentMethod === "upi"
       ? new Date(createdAt.getTime() + UPI_PAYMENT_WINDOW_MINUTES * 60 * 1000)
       : undefined;
+    const status = requiresExternalConfirmation ? "awaiting_payment" : "placed";
 
-    const collection = await getCollection<OrderDocument>("orders");
-    await collection.insertOne({
-      userId,
-      orderId,
-      createdAt,
-      status: requiresExternalConfirmation ? "awaiting_payment" : "placed",
-      paymentMethod: input.paymentMethod,
-      paymentStatus,
-      ...(input.paymentMethod === "upi" ? { paymentAttempt, paymentExpiresAt } : {}),
-      ...(platformFee !== undefined ? { platformFee } : {}),
-      customer,
-      items: normalizedItems,
-      subtotal,
-      shipping,
-      total,
-    });
+    const db = getD1();
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO orders (
+             order_id, user_id, created_at, status, payment_method, payment_status,
+             payment_attempt, payment_expires_at, platform_fee, customer, subtotal, shipping, total
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          orderId,
+          userId,
+          createdAt.toISOString(),
+          status,
+          input.paymentMethod,
+          paymentStatus,
+          input.paymentMethod === "upi" ? paymentAttempt : null,
+          paymentExpiresAt ? paymentExpiresAt.toISOString() : null,
+          platformFee ?? null,
+          JSON.stringify(customer),
+          subtotal,
+          shipping,
+          total,
+        ),
+      ...normalizedItems.map((item, index) =>
+        db
+          .prepare(
+            `INSERT INTO order_items (
+               order_id, position, type, product_id, product_name, image_url,
+               artwork_object_key, artwork_content_type, size, shape, finish,
+               quantity, unit_price, line_total
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            orderId,
+            index,
+            item.type,
+            item.productId ?? null,
+            item.productName,
+            item.imageUrl ?? null,
+            item.artworkObjectKey ?? null,
+            item.artworkContentType ?? null,
+            item.size,
+            item.shape ?? null,
+            item.finish ?? null,
+            item.quantity,
+            item.unitPrice,
+            item.lineTotal,
+          ),
+      ),
+    ]);
 
     const serializedOrder = {
       orderId,
       createdAt: createdAt.toISOString(),
-      status: requiresExternalConfirmation ? "awaiting_payment" : "placed",
+      status,
       paymentMethod: input.paymentMethod,
       paymentStatus,
       ...(input.paymentMethod === "upi" ? { paymentAttempt, paymentExpiresAt: paymentExpiresAt!.toISOString() } : {}),
@@ -387,47 +580,51 @@ export async function createOrderFromCheckout(input: {
 async function expireUpiPaymentIfNeeded(order: OrderDocument): Promise<OrderDocument> {
   if (order.paymentMethod !== "upi" || order.paymentStatus === "paid" || !order.paymentExpiresAt) return order;
   if (order.paymentExpiresAt.getTime() > Date.now()) return order;
-  const collection = await getCollection<OrderDocument>("orders");
-  await collection.updateOne(
-    { orderId: order.orderId, paymentMethod: "upi", paymentStatus: { $ne: "paid" }, paymentExpiresAt: { $lte: new Date() } },
-    { $set: { paymentStatus: "cancelled", status: "cancelled", updatedAt: new Date() } },
-  );
-  const refreshed = await collection.findOne({ orderId: order.orderId });
+  const db = getD1();
+  const now = nowIso();
+  await db
+    .prepare(
+      `UPDATE orders SET payment_status = 'cancelled', status = 'cancelled', updated_at = ?
+       WHERE order_id = ? AND payment_method = 'upi' AND payment_status != 'paid' AND payment_expires_at <= ?`,
+    )
+    .bind(now, order.orderId, now)
+    .run();
+  const refreshed = await loadOrderByOrderId(db, order.orderId);
   return refreshed ?? order;
 }
 
 export async function getMyOrders() {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
-  const collection = await getCollection<OrderDocument>("orders");
-  const docs = await collection
-    .find({ userId: new ObjectId(user.id) })
-    .sort({ createdAt: -1 })
-    .limit(100)
-    .toArray();
-
-  const refreshed = await Promise.all(docs.map(expireUpiPaymentIfNeeded));
+  const db = getD1();
+  const { results: orderRows } = await db
+    .prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 100")
+    .bind(user.id)
+    .all<OrderRow>();
+  const orders = await hydrateOrders(db, orderRows);
+  const refreshed = await Promise.all(orders.map(expireUpiPaymentIfNeeded));
   return refreshed.map(serializeOrder);
 }
 
 export async function getMyOrder(orderId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
-  const collection = await getCollection<OrderDocument>("orders");
-  const doc = await collection.findOne({ orderId, userId: new ObjectId(user.id) });
-  if (!doc) return null;
+  const db = getD1();
+  const row = await db.prepare("SELECT * FROM orders WHERE order_id = ? AND user_id = ?").bind(orderId, user.id).first<OrderRow>();
+  if (!row) return null;
+  const doc = rowToOrder(row, await loadOrderItems(db, orderId));
   return serializeOrder(await expireUpiPaymentIfNeeded(doc));
 }
 
 export async function attachStripeSession(orderId: string, sessionId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
-  const collection = await getCollection<OrderDocument>("orders");
-  const result = await collection.updateOne(
-    { orderId, userId: new ObjectId(user.id), paymentStatus: "pending" },
-    { $set: { stripeSessionId: sessionId } },
-  );
-  if (!result.matchedCount) throw new Error("Order is unavailable for payment.");
+  const db = getD1();
+  const result = await db
+    .prepare("UPDATE orders SET stripe_session_id = ? WHERE order_id = ? AND user_id = ? AND payment_status = 'pending'")
+    .bind(sessionId, orderId, user.id)
+    .run();
+  if (!result.meta.changes) throw new Error("Order is unavailable for payment.");
 }
 
 export async function setStripePaymentState(params: {
@@ -435,52 +632,53 @@ export async function setStripePaymentState(params: {
   paymentStatus: PaymentStatus;
   paymentIntentId?: string | null;
 }) {
-  const collection = await getCollection<OrderDocument>("orders");
-  const update: Record<string, unknown> = { paymentStatus: params.paymentStatus };
-  if (params.paymentIntentId) update.stripePaymentIntentId = params.paymentIntentId;
-  if (params.paymentStatus === "paid") update.status = "placed";
-  await collection.updateOne(
-    { stripeSessionId: params.sessionId },
-    { $set: update },
-  );
+  const db = getD1();
+  const setParts: string[] = ["payment_status = ?"];
+  const binds: unknown[] = [params.paymentStatus];
+  if (params.paymentIntentId) {
+    setParts.push("stripe_payment_intent_id = ?");
+    binds.push(params.paymentIntentId);
+  }
+  if (params.paymentStatus === "paid") setParts.push("status = 'placed'");
+  binds.push(params.sessionId);
+  await db.prepare(`UPDATE orders SET ${setParts.join(", ")} WHERE stripe_session_id = ?`).bind(...binds).run();
 }
 
 /**
- * Atomically claims the razorpayOrderId slot on an order. If two checkout
+ * Atomically claims the razorpay_order_id slot on an order. If two checkout
  * attempts race for the same order (e.g. two open tabs), only the first
- * findOneAndUpdate can match razorpayOrderId: { $exists: false } - the
- * second finds the slot already taken and gets back the WINNER's
- * razorpayOrderId instead, so both callers converge on the same Razorpay
- * order rather than the second silently overwriting the first's (which
- * would orphan any webhook that later arrives for the first attempt).
+ * UPDATE can match razorpay_order_id IS NULL — SQLite/D1 executes writes
+ * serially, so this is exactly as atomic as Mongo's findOneAndUpdate with
+ * $exists: false was. The second finds the slot already taken and gets
+ * back the WINNER's razorpay_order_id instead, so both callers converge on
+ * the same Razorpay order rather than the second silently overwriting the
+ * first's (which would orphan any webhook that later arrives for the first
+ * attempt).
  *
- * Returns the razorpayOrderId that should actually be used by the caller -
- * this may not be the one passed in, if someone else won the race first.
+ * Returns the razorpay_order_id that should actually be used by the caller
+ * - this may not be the one passed in, if someone else won the race first.
  */
 export async function attachRazorpayOrder(orderId: string, razorpayOrderId: string): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
-  const collection = await getCollection<OrderDocument>("orders");
+  const db = getD1();
 
-  const claimed = await collection.findOneAndUpdate(
-    {
-      orderId,
-      userId: new ObjectId(user.id),
-      paymentMethod: "razorpay",
-      paymentStatus: "pending",
-      razorpayOrderId: { $exists: false },
-    },
-    { $set: { razorpayOrderId } },
-  );
-  if (claimed) return razorpayOrderId;
+  const claim = await db
+    .prepare(
+      `UPDATE orders SET razorpay_order_id = ?
+       WHERE order_id = ? AND user_id = ? AND payment_method = 'razorpay' AND payment_status = 'pending' AND razorpay_order_id IS NULL`,
+    )
+    .bind(razorpayOrderId, orderId, user.id)
+    .run();
+  if (claim.meta.changes) return razorpayOrderId;
 
-  const existing = await collection.findOne({
-    orderId,
-    userId: new ObjectId(user.id),
-    paymentMethod: "razorpay",
-    paymentStatus: "pending",
-  });
-  if (existing?.razorpayOrderId) return existing.razorpayOrderId;
+  const existing = await db
+    .prepare(
+      "SELECT razorpay_order_id FROM orders WHERE order_id = ? AND user_id = ? AND payment_method = 'razorpay' AND payment_status = 'pending'",
+    )
+    .bind(orderId, user.id)
+    .first<{ razorpay_order_id: string | null }>();
+  if (existing?.razorpay_order_id) return existing.razorpay_order_id;
 
   throw new Error("Order is unavailable for payment.");
 }
@@ -489,7 +687,7 @@ export async function attachRazorpayOrder(orderId: string, razorpayOrderId: stri
  * Called ONLY from the Razorpay webhook route, after its signature has been
  * verified — this is the sole automated path allowed to mark a Razorpay
  * order "paid" (unlike Google Pay's auto-check, which may only suggest —
- * see paymentAutoVerification). Idempotent: the paymentStatus: { $ne: "paid" }
+ * see paymentAutoVerification). Idempotent: the `payment_status != 'paid'`
  * filter means a duplicate/retried webhook delivery for an already-processed
  * event is a silent no-op rather than a double-write.
  */
@@ -498,26 +696,33 @@ export async function setRazorpayPaymentState(params: {
   paymentStatus: Extract<PaymentStatus, "paid" | "failed" | "cancelled">;
   razorpayPaymentId?: string;
 }) {
-  const collection = await getCollection<OrderDocument>("orders");
-  const existing = await collection.findOne({ razorpayOrderId: params.razorpayOrderId });
+  const db = getD1();
+  const existing = await loadOrderByRazorpayOrderId(db, params.razorpayOrderId);
   if (!existing) return { matched: false as const };
   if (existing.paymentStatus === "paid") return { matched: true as const, alreadyProcessed: true as const, order: existing };
 
-  const update: Record<string, unknown> = { paymentStatus: params.paymentStatus, updatedAt: new Date() };
-  if (params.razorpayPaymentId) update.razorpayPaymentId = params.razorpayPaymentId;
-  if (params.paymentStatus === "paid") {
-    update.status = existing.status === "awaiting_payment" ? "placed" : existing.status;
-  } else if (existing.status === "awaiting_payment") {
-    update.status = "awaiting_payment"; // stays put — customer can retry, order isn't dead-ended
+  const setParts: string[] = ["payment_status = ?", "updated_at = ?"];
+  const binds: unknown[] = [params.paymentStatus, nowIso()];
+  if (params.razorpayPaymentId) {
+    setParts.push("razorpay_payment_id = ?");
+    binds.push(params.razorpayPaymentId);
   }
+  if (params.paymentStatus === "paid") {
+    setParts.push("status = ?");
+    binds.push(existing.status === "awaiting_payment" ? "placed" : existing.status);
+  } else if (existing.status === "awaiting_payment") {
+    setParts.push("status = ?");
+    binds.push("awaiting_payment"); // stays put — customer can retry, order isn't dead-ended
+  }
+  binds.push(params.razorpayOrderId);
 
-  const result = await collection.updateOne(
-    { razorpayOrderId: params.razorpayOrderId, paymentStatus: { $ne: "paid" } },
-    { $set: update },
-  );
-  if (result.matchedCount === 0) return { matched: true as const, alreadyProcessed: true as const, order: existing };
+  const result = await db
+    .prepare(`UPDATE orders SET ${setParts.join(", ")} WHERE razorpay_order_id = ? AND payment_status != 'paid'`)
+    .bind(...binds)
+    .run();
+  if (!result.meta.changes) return { matched: true as const, alreadyProcessed: true as const, order: existing };
 
-  const updated = await collection.findOne({ razorpayOrderId: params.razorpayOrderId });
+  const updated = await loadOrderByRazorpayOrderId(db, params.razorpayOrderId);
   return { matched: true as const, alreadyProcessed: false as const, order: updated ?? existing };
 }
 
@@ -573,15 +778,16 @@ export async function requireAdmin() {
 
 export async function getAdminOrders() {
   await requireAdmin();
-  const collection = await getCollection<OrderDocument>("orders");
-  const docs = await collection.find({}).sort({ createdAt: -1 }).limit(250).toArray();
-  return docs.map(serializeOrder);
+  const db = getD1();
+  const { results: orderRows } = await db.prepare("SELECT * FROM orders ORDER BY created_at DESC LIMIT 250").all<OrderRow>();
+  const orders = await hydrateOrders(db, orderRows);
+  return orders.map(serializeOrder);
 }
 
 export async function getAdminOrder(orderId: string) {
   await requireAdmin();
-  const collection = await getCollection<OrderDocument>("orders");
-  const doc = await collection.findOne({ orderId });
+  const db = getD1();
+  const doc = await loadOrderByOrderId(db, orderId);
   return doc ? serializeOrder(doc) : null;
 }
 
@@ -637,11 +843,19 @@ export async function updateAdminOrder(params: {
   shippingDetails?: ShippingDetailsInput;
 }) {
   const admin = await requireAdmin();
-  const collection = await getCollection<OrderDocument>("orders");
-  const existing = await collection.findOne({ orderId: params.orderId });
+  const db = getD1();
+  const existing = await loadOrderByOrderId(db, params.orderId);
   if (!existing) throw new Error("Order not found.");
 
-  const update: Record<string, unknown> = { updatedAt: new Date() };
+  const update: {
+    updatedAt: Date;
+    shippingDetails?: OrderDocument["shippingDetails"];
+    status?: OrderDocument["status"];
+    paymentStatus?: PaymentStatus;
+    paymentVerification?: NonNullable<OrderDocument["paymentVerification"]>;
+  } = { updatedAt: new Date() };
+  let clearAutoVerification = false;
+
   let normalizedShipping: OrderDocument["shippingDetails"] | undefined;
   if (params.shippingDetails) {
     normalizedShipping = normalizeShippingDetails(params.shippingDetails);
@@ -663,20 +877,22 @@ export async function updateAdminOrder(params: {
     if (existing.paymentMethod !== "upi") throw new Error("Payment verification details are only required for UPI orders.");
     if (existing.paymentStatus === "paid") throw new Error("Payment has already been verified.");
     const verification = normalizePaymentVerification(params.paymentVerification, existing.total, admin.email);
-    const duplicateTransaction = await collection.findOne({
-      orderId: { $ne: existing.orderId },
-      "paymentVerification.transactionId": verification.transactionId,
-    });
+    const duplicateTransaction = await db
+      .prepare("SELECT 1 FROM orders WHERE order_id != ? AND json_extract(payment_verification, '$.transactionId') = ?")
+      .bind(existing.orderId, verification.transactionId)
+      .first();
     if (duplicateTransaction) throw new Error("That UPI transaction ID is already recorded against another order.");
     update.paymentStatus = "paid";
     update.status = params.status ?? (existing.status === "awaiting_payment" ? "placed" : existing.status);
     update.paymentVerification = verification;
+    clearAutoVerification = true;
   } else if (params.paymentStatus === "paid") {
     if (existing.paymentMethod === "upi") {
       throw new Error("Enter the UPI transaction details before confirming payment.");
     }
     update.paymentStatus = "paid";
     update.status = params.status ?? (existing.status === "awaiting_payment" ? "placed" : existing.status);
+    clearAutoVerification = true;
   } else if (params.paymentStatus) {
     update.paymentStatus = params.paymentStatus;
   }
@@ -691,20 +907,42 @@ export async function updateAdminOrder(params: {
     if (!params.status && existing.status === "awaiting_payment") update.status = "cancelled";
   }
 
-  const writeOps: { $set: Record<string, unknown>; $unset?: Record<string, ""> } = { $set: update };
-  if (update.paymentStatus === "paid") writeOps.$unset = { paymentAutoVerification: "" };
-  await collection.updateOne({ orderId: params.orderId }, writeOps);
-  const updated = await collection.findOne({ orderId: params.orderId });
+  const setParts: string[] = ["updated_at = ?"];
+  const binds: unknown[] = [update.updatedAt.toISOString()];
+  if (update.shippingDetails !== undefined) {
+    setParts.push("shipping_details = ?");
+    binds.push(JSON.stringify(update.shippingDetails));
+  }
+  if (update.status !== undefined) {
+    setParts.push("status = ?");
+    binds.push(update.status);
+  }
+  if (update.paymentStatus !== undefined) {
+    setParts.push("payment_status = ?");
+    binds.push(update.paymentStatus);
+  }
+  if (update.paymentVerification !== undefined) {
+    setParts.push("payment_verification = ?");
+    binds.push(JSON.stringify(update.paymentVerification));
+  }
+  if (clearAutoVerification) setParts.push("payment_auto_verification = NULL");
+  binds.push(params.orderId);
+
+  await db.prepare(`UPDATE orders SET ${setParts.join(", ")} WHERE order_id = ?`).bind(...binds).run();
+  const updated = await loadOrderByOrderId(db, params.orderId);
   if (!updated) throw new Error("Unable to reload updated order.");
   return serializeOrder(updated);
 }
 
 export async function markOutForDeliveryEmailSent(orderId: string): Promise<void> {
-  const collection = await getCollection<OrderDocument>("orders");
-  await collection.updateOne(
-    { orderId, "shippingDetails": { $exists: true } },
-    { $set: { "shippingDetails.outForDeliveryEmailSentAt": new Date(), updatedAt: new Date() } },
-  );
+  const db = getD1();
+  const existing = await loadOrderByOrderId(db, orderId);
+  if (!existing?.shippingDetails) return;
+  const updatedShipping = { ...existing.shippingDetails, outForDeliveryEmailSentAt: new Date() };
+  await db
+    .prepare("UPDATE orders SET shipping_details = ?, updated_at = ? WHERE order_id = ?")
+    .bind(JSON.stringify(updatedShipping), nowIso(), orderId)
+    .run();
 }
 
 function serializeOrder(order: OrderDocument) {
@@ -758,49 +996,49 @@ export async function expireUpiForCustomer(order: OrderDocument): Promise<OrderD
 export async function retryUpiPayment(orderId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
-  const userId = new ObjectId(user.id);
-  const collection = await getCollection<OrderDocument>("orders");
-  const existing = await collection.findOne({ orderId, userId, paymentMethod: "upi" });
+  const db = getD1();
+  const existing = await db
+    .prepare("SELECT * FROM orders WHERE order_id = ? AND user_id = ? AND payment_method = 'upi'")
+    .bind(orderId, user.id)
+    .first<OrderRow>();
   if (!existing) throw new Error("Order not found.");
-  if (existing.paymentStatus === "paid") throw new Error("Payment has already been verified.");
+  if (existing.payment_status === "paid") throw new Error("Payment has already been verified.");
   if (!["awaiting_payment", "cancelled"].includes(existing.status)) throw new Error("This order is no longer available for payment.");
-  const paymentAttempt = (existing.paymentAttempt ?? 1) + 1;
+  const paymentAttempt = (existing.payment_attempt ?? 1) + 1;
   const paymentExpiresAt = new Date(Date.now() + UPI_PAYMENT_WINDOW_MINUTES * 60 * 1000);
-  const result = await collection.findOneAndUpdate(
-    { orderId, userId, paymentMethod: "upi", paymentStatus: { $ne: "paid" } },
-    {
-      $set: { status: "awaiting_payment", paymentStatus: "pending", paymentAttempt, paymentExpiresAt, updatedAt: new Date() },
-      $unset: { paymentClaimedAt: "" },
-    },
-    { returnDocument: "after" },
-  );
-  if (!result) throw new Error("Unable to restart UPI payment.");
-  return serializeOrder(result);
+  const result = await db
+    .prepare(
+      `UPDATE orders SET status = 'awaiting_payment', payment_status = 'pending', payment_attempt = ?, payment_expires_at = ?, updated_at = ?, payment_claimed_at = NULL
+       WHERE order_id = ? AND user_id = ? AND payment_method = 'upi' AND payment_status != 'paid'`,
+    )
+    .bind(paymentAttempt, paymentExpiresAt.toISOString(), nowIso(), orderId, user.id)
+    .run();
+  if (!result.meta.changes) throw new Error("Unable to restart UPI payment.");
+  const updated = await loadOrderByOrderId(db, orderId);
+  if (!updated) throw new Error("Unable to restart UPI payment.");
+  return serializeOrder(updated);
 }
 
 export async function claimUpiPayment(orderId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
-  const collection = await getCollection<OrderDocument>("orders");
-  const current = await collection.findOne({ orderId, userId: new ObjectId(user.id), paymentMethod: "upi" });
-  if (!current) throw new Error("Order is unavailable for UPI payment confirmation.");
+  const db = getD1();
+  const current = await loadOrderByOrderId(db, orderId);
+  if (!current || current.userId !== user.id || current.paymentMethod !== "upi") {
+    throw new Error("Order is unavailable for UPI payment confirmation.");
+  }
   const activeOrder = await expireUpiPaymentIfNeeded(current);
   if (activeOrder.paymentStatus === "cancelled") throw new Error("This payment window has expired. Start payment again.");
-  const result = await collection.findOneAndUpdate(
-    {
-      orderId,
-      userId: new ObjectId(user.id),
-      paymentMethod: "upi",
-      paymentStatus: { $in: ["pending_confirmation", "pending"] },
-    },
-    {
-      $set: {
-        paymentStatus: "pending_confirmation",
-        paymentClaimedAt: new Date(),
-      },
-    },
-    { returnDocument: "after" },
-  );
-  if (!result) throw new Error("Order is unavailable for UPI payment confirmation.");
-  return serializeOrder(result);
+
+  const result = await db
+    .prepare(
+      `UPDATE orders SET payment_status = 'pending_confirmation', payment_claimed_at = ?
+       WHERE order_id = ? AND user_id = ? AND payment_method = 'upi' AND payment_status IN ('pending_confirmation', 'pending')`,
+    )
+    .bind(nowIso(), orderId, user.id)
+    .run();
+  if (!result.meta.changes) throw new Error("Order is unavailable for UPI payment confirmation.");
+  const updated = await loadOrderByOrderId(db, orderId);
+  if (!updated) throw new Error("Order is unavailable for UPI payment confirmation.");
+  return serializeOrder(updated);
 }

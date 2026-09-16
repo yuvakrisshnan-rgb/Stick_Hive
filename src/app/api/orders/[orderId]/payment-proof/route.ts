@@ -60,7 +60,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     }
 
     const paymentProof = { objectKey: key, contentType: file.type, fileName: file.name.slice(0, 120), uploadedAt: new Date() };
-    await collection.updateOne({ _id: active._id }, { $set: { paymentProof, updatedAt: new Date() } });
+    await collection.updateOne({ _id: rawOrder._id }, { $set: { paymentProof, updatedAt: new Date() } });
     return NextResponse.json({ success: true, proof: { ...paymentProof, uploadedAt: paymentProof.uploadedAt.toISOString() } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to upload payment proof.";
