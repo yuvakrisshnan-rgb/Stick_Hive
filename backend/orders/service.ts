@@ -278,6 +278,51 @@ async function loadOrderByRazorpayOrderId(db: D1Database, razorpayOrderId: strin
   return rowToOrder(row, await loadOrderItems(db, row.order_id));
 }
 
+/**
+ * The raw, unserialized OrderDocument (real Date objects) for an order,
+ * with no admin/ownership check - used by route handlers that already did
+ * their own authorization (e.g. via getAdminOrder) and need the Date-typed
+ * shape to pass into functions like createDelhiveryShipment.
+ */
+export async function getOrderDocument(orderId: string): Promise<OrderDocument | null> {
+  return loadOrderByOrderId(getD1(), orderId);
+}
+
+/** Used by backend/shipping/delhivery.ts to find the order a carrier webhook event belongs to. */
+export async function loadOrderByTrackingNumber(trackingNumber: string): Promise<OrderDocument | null> {
+  const db = getD1();
+  const row = await db
+    .prepare("SELECT * FROM orders WHERE json_extract(shipping_details, '$.trackingNumber') = ?")
+    .bind(trackingNumber)
+    .first<OrderRow>();
+  if (!row) return null;
+  return rowToOrder(row, await loadOrderItems(db, row.order_id));
+}
+
+/**
+ * Persists a shipping_details update (and optionally a status transition)
+ * for an order. `shippingDetails` only needs to be JSON-serializable - its
+ * Date fields may be real Date objects or already-ISO strings, since both
+ * JSON.stringify to the same TEXT value D1 stores and rowToOrder re-parses
+ * identically either way. Used by backend/shipping/delhivery.ts and the
+ * Delhivery create/pickup route handlers.
+ */
+export async function updateOrderShippingAndStatus(
+  orderId: string,
+  shippingDetails: Record<string, unknown>,
+  status?: OrderDocument["status"],
+): Promise<void> {
+  const db = getD1();
+  const setParts: string[] = ["shipping_details = ?", "updated_at = ?"];
+  const binds: unknown[] = [JSON.stringify(shippingDetails), nowIso()];
+  if (status) {
+    setParts.push("status = ?");
+    binds.push(status);
+  }
+  binds.push(orderId);
+  await db.prepare(`UPDATE orders SET ${setParts.join(", ")} WHERE order_id = ?`).bind(...binds).run();
+}
+
 async function hydrateOrders(db: D1Database, orderRows: OrderRow[]): Promise<OrderDocument[]> {
   if (orderRows.length === 0) return [];
   const placeholders = orderRows.map(() => "?").join(",");
@@ -1017,6 +1062,29 @@ export async function retryUpiPayment(orderId: string) {
   const updated = await loadOrderByOrderId(db, orderId);
   if (!updated) throw new Error("Unable to restart UPI payment.");
   return serializeOrder(updated);
+}
+
+/** Used by the payment-proof upload route: the caller's own UPI order, with expiry applied. */
+export async function getMyOrderForPaymentProof(orderId: string): Promise<OrderDocument | null> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated.");
+  const db = getD1();
+  const row = await db
+    .prepare("SELECT * FROM orders WHERE order_id = ? AND user_id = ? AND payment_method = 'upi'")
+    .bind(orderId, user.id)
+    .first<OrderRow>();
+  if (!row) return null;
+  const order = rowToOrder(row, await loadOrderItems(db, orderId));
+  return expireUpiPaymentIfNeeded(order);
+}
+
+/** Used by the payment-proof upload route to attach the uploaded screenshot's S3 key. */
+export async function setPaymentProof(orderId: string, paymentProof: NonNullable<OrderDocument["paymentProof"]>): Promise<void> {
+  const db = getD1();
+  await db
+    .prepare("UPDATE orders SET payment_proof = ?, updated_at = ? WHERE order_id = ?")
+    .bind(JSON.stringify(paymentProof), nowIso(), orderId)
+    .run();
 }
 
 export async function claimUpiPayment(orderId: string) {

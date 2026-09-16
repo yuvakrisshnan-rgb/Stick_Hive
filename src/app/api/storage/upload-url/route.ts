@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ObjectId } from "mongodb";
 import { createCustomArtworkUpload } from "../../../../../backend/storage/uploads";
 import { getCurrentUser } from "../../../../../backend/auth/service";
 import { rateLimit, getClientIp } from "../../../../../backend/security/rate-limit";
@@ -22,7 +21,7 @@ export async function POST(request: Request) {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ success: false, error: "Not authenticated." }, { status: 401 });
     const body = requestSchema.parse(await request.json());
-    const result = await createCustomArtworkUpload({ ...body, userId: new ObjectId(user.id) });
+    const result = await createCustomArtworkUpload({ ...body, userId: user.id });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     if (error instanceof z.ZodError) {

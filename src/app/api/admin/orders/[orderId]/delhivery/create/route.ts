@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createDelhiveryShipment } from "../../../../../../../../backend/shipping/delhivery";
-import { getAdminOrder } from "../../../../../../../../backend/orders/service";
-import { getCollection } from "../../../../../../../../backend/db/mongodb";
-import type { OrderDocument } from "../../../../../../../../backend/orders/service";
+import { getAdminOrder, getOrderDocument, updateOrderShippingAndStatus } from "../../../../../../../../backend/orders/service";
 
 export const runtime = "nodejs";
 
@@ -25,8 +23,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     if (serialized.status === "cancelled") return NextResponse.json({ success: false, error: "Cancelled orders cannot be shipped." }, { status: 400 });
     if (serialized.shippingDetails?.trackingNumber) return NextResponse.json({ success: false, error: "This order already has a tracking number." }, { status: 400 });
 
-    const collection = await getCollection<OrderDocument>("orders");
-    const raw = await collection.findOne({ orderId });
+    const raw = await getOrderDocument(orderId);
     if (!raw) return NextResponse.json({ success: false, error: "Order not found." }, { status: 404 });
 
     const created = await createDelhiveryShipment(raw, input);
@@ -39,7 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
       delhivery: { waybill: created.waybill, pickupLocation: created.pickupLocation, createdAt: new Date(), environment: (process.env.DELHIVERY_ENV === "staging" ? "staging" : "production") as "staging" | "production" },
       updatedAt: new Date(),
     };
-    await collection.updateOne({ _id: raw._id }, { $set: { shippingDetails, updatedAt: new Date(), status: raw.status === "placed" ? "packed" : raw.status } });
+    await updateOrderShippingAndStatus(orderId, shippingDetails, raw.status === "placed" ? "packed" : raw.status);
     const updated = await getAdminOrder(orderId);
     return NextResponse.json({ success: true, order: updated, delhivery: created });
   } catch (error) {

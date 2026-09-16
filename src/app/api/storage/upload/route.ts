@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
 import { getCurrentUser } from "../../../../../backend/auth/service";
 import { uploadCustomArtwork, MAX_UPLOAD_BYTES } from "../../../../../backend/storage/uploads";
 
@@ -25,7 +24,7 @@ export async function POST(request: Request) {
     const result = await uploadCustomArtwork({
       body: new Uint8Array(await file.arrayBuffer()),
       contentType: file.type,
-      userId: new ObjectId(user.id),
+      userId: user.id,
       size: file.size,
     });
 

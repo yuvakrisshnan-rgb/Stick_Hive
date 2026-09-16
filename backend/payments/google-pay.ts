@@ -1,7 +1,7 @@
 import { GoogleAuth } from "google-auth-library";
-import { ObjectId } from "mongodb";
-import { getCollection } from "../db/mongodb";
+import { getD1 } from "../db/d1";
 import { getCurrentUser } from "../auth/service";
+import { getMyOrder } from "../orders/service";
 
 type GoogleTransactionResponse = {
   transactionStatus?: "SUCCESS" | "FAILURE" | "IN_PROGRESS" | "PAYMENT_NOT_INITIATED";
@@ -51,11 +51,10 @@ export async function checkGooglePayPayment(orderId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated.");
 
-  const collection = await getCollection<any>("orders");
-  const filter = ObjectId.isValid(user.id)
-    ? { orderId, userId: new ObjectId(user.id) }
-    : { orderId };
-  const order = await collection.findOne(filter);
+  // getMyOrder enforces ownership (order_id + the caller's own user_id) and
+  // returns the same serialized shape everywhere else in the app uses,
+  // upiPayment (computed at read time - see getUpiPaymentDetails) included.
+  const order = await getMyOrder(orderId);
   if (!order) throw new Error("Order not found.");
   if (order.paymentMethod !== "upi") throw new Error("Google Pay verification is only available for UPI orders.");
   if (order.paymentStatus === "paid") {
@@ -100,11 +99,12 @@ export async function checkGooglePayPayment(orderId: string) {
       detectedAt: now,
       source: "google-pay-api",
     };
-    await collection.updateOne(
-      { _id: order._id, paymentStatus: { $ne: "paid" } },
-      { $set: { paymentAutoVerification: autoVerification, updatedAt: now } },
-    );
-    return { status: data.transactionStatus, paid: false, autoVerified: true, order: await collection.findOne({ _id: order._id }) };
+    const db = getD1();
+    await db
+      .prepare("UPDATE orders SET payment_auto_verification = ?, updated_at = ? WHERE order_id = ? AND payment_status != 'paid'")
+      .bind(JSON.stringify(autoVerification), now.toISOString(), orderId)
+      .run();
+    return { status: data.transactionStatus, paid: false, autoVerified: true, order: await getMyOrder(orderId) };
   }
 
   return { status: data.transactionStatus ?? "IN_PROGRESS", paid: false, amount, order };

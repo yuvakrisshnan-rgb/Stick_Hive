@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAdminOrder } from "../../../../../../../../backend/orders/service";
-import { getCollection } from "../../../../../../../../backend/db/mongodb";
-import type { OrderDocument } from "../../../../../../../../backend/orders/service";
+import { getAdminOrder, getOrderDocument, updateOrderShippingAndStatus } from "../../../../../../../../backend/orders/service";
 import { scheduleDelhiveryPickup } from "../../../../../../../../backend/shipping/delhivery";
 
 export const runtime = "nodejs";
@@ -23,10 +21,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     const result = await scheduleDelhiveryPickup(body);
     const pickupId = String((result as Record<string, unknown>)?.pickup_id ?? (result as Record<string, unknown>)?.pickupId ?? (result as Record<string, unknown>)?.id ?? "").trim();
     if (pickupId) {
-      const collection = await getCollection<OrderDocument>("orders");
-      const raw = await collection.findOne({ orderId });
+      const raw = await getOrderDocument(orderId);
       if (raw?.shippingDetails) {
-        await collection.updateOne({ _id: raw._id }, { $set: { "shippingDetails.delhivery.pickupId": pickupId, "shippingDetails.updatedAt": new Date(), updatedAt: new Date() } });
+        const shippingDetails = {
+          ...raw.shippingDetails,
+          delhivery: raw.shippingDetails.delhivery ? { ...raw.shippingDetails.delhivery, pickupId } : undefined,
+          updatedAt: new Date(),
+        };
+        await updateOrderShippingAndStatus(orderId, shippingDetails);
       }
     }
     return NextResponse.json({ success: true, pickup: result, pickupId: pickupId || undefined });

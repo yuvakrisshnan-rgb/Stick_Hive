@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ObjectId } from "mongodb";
 import { getCurrentUser } from "../../../../../../backend/auth/service";
-import { getCollection } from "../../../../../../backend/db/mongodb";
-import { expireUpiForCustomer } from "../../../../../../backend/orders/service";
+import { getMyOrderForPaymentProof, setPaymentProof } from "../../../../../../backend/orders/service";
 import { getS3BucketName, getS3Client } from "../../../../../../backend/storage/s3";
 import { rateLimit, getClientIp } from "../../../../../../backend/security/rate-limit";
 
@@ -12,13 +10,6 @@ export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"]]);
-
-type OrderShape = {
-  _id: ObjectId;
-  paymentMethod: string;
-  paymentStatus: string;
-  paymentProof?: { objectKey: string };
-};
 
 export async function POST(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   try {
@@ -38,10 +29,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     if (!ext) return NextResponse.json({ success: false, error: "Upload a PNG, JPEG, or WebP screenshot." }, { status: 400 });
     if (file.size <= 0 || file.size > MAX_BYTES) return NextResponse.json({ success: false, error: "Payment proof must be 5 MB or smaller." }, { status: 400 });
 
-    const collection = await getCollection<OrderShape & Record<string, unknown>>("orders");
-    const rawOrder = await collection.findOne({ orderId, userId: new ObjectId(user.id), paymentMethod: "upi" });
-    if (!rawOrder) return NextResponse.json({ success: false, error: "Order not found." }, { status: 404 });
-    const active = await expireUpiForCustomer(rawOrder as any);
+    const active = await getMyOrderForPaymentProof(orderId);
+    if (!active) return NextResponse.json({ success: false, error: "Order not found." }, { status: 404 });
     if (active.paymentStatus === "cancelled") return NextResponse.json({ success: false, error: "This payment window has expired. Start payment again." }, { status: 409 });
     if (active.paymentStatus === "paid") return NextResponse.json({ success: false, error: "Payment is already verified." }, { status: 409 });
 
@@ -60,7 +49,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     }
 
     const paymentProof = { objectKey: key, contentType: file.type, fileName: file.name.slice(0, 120), uploadedAt: new Date() };
-    await collection.updateOne({ _id: rawOrder._id }, { $set: { paymentProof, updatedAt: new Date() } });
+    await setPaymentProof(orderId, paymentProof);
     return NextResponse.json({ success: true, proof: { ...paymentProof, uploadedAt: paymentProof.uploadedAt.toISOString() } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to upload payment proof.";

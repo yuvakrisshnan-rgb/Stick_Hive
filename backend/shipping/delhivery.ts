@@ -1,5 +1,5 @@
 import type { OrderDocument } from "../orders/service";
-import { getCollection } from "../db/mongodb";
+import { loadOrderByTrackingNumber, updateOrderShippingAndStatus } from "../orders/service";
 
 const TRACKING_URL_BASE = "https://www.delhivery.com/track/package";
 
@@ -204,8 +204,7 @@ export function mapDelhiveryStatus(rawStatus: string) {
 
 export async function applyDelhiveryTrackingEvent(event: ReturnType<typeof extractTrackingEvent>) {
   if (!event.awb) throw new Error("Tracking event did not contain an AWB.");
-  const collection = await getCollection<OrderDocument>("orders");
-  const order = await collection.findOne({ "shippingDetails.trackingNumber": event.awb });
+  const order = await loadOrderByTrackingNumber(event.awb);
   if (!order) return { matched: false };
 
   const mapped = mapDelhiveryStatus(event.status);
@@ -221,17 +220,17 @@ export async function applyDelhiveryTrackingEvent(event: ReturnType<typeof extra
     updatedAt: new Date(),
     ...(mapped === "shipped" ? { shippedAt: current?.shippedAt ?? new Date() } : {}),
     ...(mapped === "delivered" ? { deliveredAt: current?.deliveredAt ?? new Date() } : {}),
-  } as any;
+  } as NonNullable<OrderDocument["shippingDetails"]>;
 
-  const update: Record<string, unknown> = { shippingDetails };
+  let nextStatus: OrderDocument["status"] | undefined;
   if (mapped) {
     const precedence: Record<string, number> = { placed: 1, processing: 2, packed: 3, shipped: 4, out_for_delivery: 5, delivered: 6, cancelled: 99 };
     const currentRank = precedence[order.status] ?? 0;
     const nextRank = precedence[mapped] ?? currentRank;
-    if (nextRank >= currentRank) update.status = mapped;
+    if (nextRank >= currentRank) nextStatus = mapped;
   }
   const emailNeeded = mapped === "out_for_delivery" && !current?.outForDeliveryEmailSentAt;
-  await collection.updateOne({ _id: order._id }, { $set: update });
+  await updateOrderShippingAndStatus(order.orderId, shippingDetails, nextStatus);
   return { matched: true, orderId: order.orderId, mappedStatus: mapped, email: order.customer.email, customerName: order.customer.name, shippingDetails, emailNeeded };
 }
 

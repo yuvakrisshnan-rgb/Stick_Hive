@@ -2,7 +2,6 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import { getS3BucketName, getS3Client } from "./s3";
-import type { ObjectId } from "mongodb";
 
 export const ALLOWED_UPLOAD_TYPES = [
   "image/png",
@@ -35,14 +34,16 @@ export function validateUpload(contentType: string, size: number): void {
   }
 }
 
-export function createCustomArtworkObjectKey(userId: ObjectId, contentType: string): string {
-  return `custom-art/temp/${userId.toHexString()}/${randomUUID()}.${safeExtension(contentType)}`;
+// userId is a D1 users.id - a crypto.randomUUID() string (see
+// backend/auth/service.ts, Task 2), not a Mongo ObjectId hex string.
+export function createCustomArtworkObjectKey(userId: string, contentType: string): string {
+  return `custom-art/temp/${userId}/${randomUUID()}.${safeExtension(contentType)}`;
 }
 
 export async function createCustomArtworkUpload(params: {
   contentType: string;
   size: number;
-  userId: ObjectId;
+  userId: string;
 }): Promise<PresignedUpload> {
   validateUpload(params.contentType, params.size);
 
@@ -56,7 +57,7 @@ export async function createCustomArtworkUpload(params: {
       ContentType: params.contentType,
       Metadata: {
         purpose: "stickhive-custom-artwork",
-        "user-id": params.userId.toHexString(),
+        "user-id": params.userId,
       },
     }),
     { expiresIn },
@@ -68,7 +69,7 @@ export async function createCustomArtworkUpload(params: {
 export async function uploadCustomArtwork(params: {
   body: Uint8Array;
   contentType: string;
-  userId: ObjectId;
+  userId: string;
   size: number;
 }): Promise<{ objectKey: string; size: number; contentType: string }> {
   validateUpload(params.contentType, params.size);
@@ -85,7 +86,7 @@ export async function uploadCustomArtwork(params: {
     ContentLength: params.size,
     Metadata: {
       purpose: "stickhive-custom-artwork",
-      "user-id": params.userId.toHexString(),
+      "user-id": params.userId,
     },
   }));
 
