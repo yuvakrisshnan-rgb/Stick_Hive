@@ -11,17 +11,11 @@
     "not_found_handling": "none",
     "binding": "ASSETS"
   },
-  // database_id is a placeholder — local `wrangler dev`/`vinext dev` (no
-  // --remote flag) emulate D1 entirely with a local SQLite file under
-  // .wrangler/state/, regardless of this ID. A real database_id (from
-  // `wrangler d1 create`, which needs a real Cloudflare account/API token —
-  // not available in this environment) is only needed before an actual
-  // Cloudflare deployment, which is out of scope for this migration phase.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "stickhive-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "9fbfa6ce-b67c-4075-afb6-c251a99ac53a",
       "migrations_dir": "migrations"
     }
   ]
