@@ -1,6 +1,5 @@
-import { getCollection } from "../db/mongodb";
+import { getD1 } from "../db/d1";
 import { requireAdmin } from "./service";
-import type { OrderDocument } from "./service";
 
 // ============================================================================
 // TYPES
@@ -57,36 +56,39 @@ const CITIES_PER_STATE_LIMIT = 5;
 // ORDERS BY LOCATION (state, with city drill-down)
 // ============================================================================
 
-async function getOrdersByLocation(collection: Awaited<ReturnType<typeof getCollection<OrderDocument>>>): Promise<LocationBreakdown[]> {
-  const rows = await collection
-    .aggregate<{ _id: string; count: number; cities: { city: string; count: number }[] }>([
-      { $match: { "customer.address.state": { $exists: true, $ne: "" } } },
-      {
-        $group: {
-          _id: { state: "$customer.address.state", city: "$customer.address.city" },
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $group: {
-          _id: "$_id.state",
-          count: { $sum: "$count" },
-          cities: { $push: { city: "$_id.city", count: "$count" } },
-        },
-      },
-      { $sort: { count: -1 } },
-      { $limit: TOP_LOCATIONS_LIMIT },
-    ])
-    .toArray();
+async function getOrdersByLocation(db: D1Database): Promise<LocationBreakdown[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT
+         json_extract(customer, '$.address.state') AS state,
+         json_extract(customer, '$.address.city') AS city,
+         COUNT(*) AS count
+       FROM orders
+       WHERE json_extract(customer, '$.address.state') IS NOT NULL
+         AND json_extract(customer, '$.address.state') != ''
+       GROUP BY state, city`,
+    )
+    .all<{ state: string; city: string; count: number }>();
 
-  // Sorting/slicing the small per-state city list in JS rather than via
-  // $sortArray (MongoDB 5.2+) keeps this aggregation portable across
-  // whatever MongoDB version the deployment target actually runs.
-  return rows.map((row) => ({
-    state: row._id,
-    count: row.count,
-    cities: [...row.cities].sort((a, b) => b.count - a.count).slice(0, CITIES_PER_STATE_LIMIT),
-  }));
+  const byState = new Map<string, { count: number; cities: { city: string; count: number }[] }>();
+  for (const row of results) {
+    const entry = byState.get(row.state) ?? { count: 0, cities: [] };
+    entry.count += row.count;
+    entry.cities.push({ city: row.city, count: row.count });
+    byState.set(row.state, entry);
+  }
+
+  // Sorting/slicing the small per-state city list in JS (rather than in
+  // SQL) mirrors how the original Mongo aggregation did it too - simplest
+  // for a list this small, and keeps the SQL portable.
+  return [...byState.entries()]
+    .map(([state, entry]) => ({
+      state,
+      count: entry.count,
+      cities: [...entry.cities].sort((a, b) => b.count - a.count).slice(0, CITIES_PER_STATE_LIMIT),
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, TOP_LOCATIONS_LIMIT);
 }
 
 // ============================================================================
@@ -102,51 +104,47 @@ async function getOrdersByLocation(collection: Awaited<ReturnType<typeof getColl
 // the only structured, meaningful distinction the data actually has.
 // ============================================================================
 
-async function getTopCatalogProducts(collection: Awaited<ReturnType<typeof getCollection<OrderDocument>>>): Promise<ProductBreakdown[]> {
-  const rows = await collection
-    .aggregate<{ _id: { productId: string; name: string }; totalQuantity: number; orderCount: number }>([
-      { $unwind: "$items" },
-      { $match: { "items.type": "product" } },
-      {
-        $group: {
-          _id: { productId: "$items.productId", name: "$items.productName" },
-          totalQuantity: { $sum: "$items.quantity" },
-          orderCount: { $sum: 1 },
-        },
-      },
-      { $sort: { totalQuantity: -1 } },
-      { $limit: TOP_PRODUCTS_LIMIT },
-    ])
-    .toArray();
+async function getTopCatalogProducts(db: D1Database): Promise<ProductBreakdown[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT product_id AS productId, product_name AS name, SUM(quantity) AS totalQuantity, COUNT(*) AS orderCount
+       FROM order_items
+       WHERE type = 'product'
+       GROUP BY product_id, product_name
+       ORDER BY totalQuantity DESC
+       LIMIT ?`,
+    )
+    .bind(TOP_PRODUCTS_LIMIT)
+    .all<{ productId: string | null; name: string; totalQuantity: number; orderCount: number }>();
 
-  return rows.map((row) => ({
-    productId: row._id.productId ?? null,
-    name: row._id.name,
+  return results.map((row) => ({
+    productId: row.productId ?? null,
+    name: row.name,
     totalQuantity: row.totalQuantity,
     orderCount: row.orderCount,
   }));
 }
 
-async function getTopCustomStickers(collection: Awaited<ReturnType<typeof getCollection<OrderDocument>>>): Promise<CustomStickerBreakdown[]> {
-  const rows = await collection
-    .aggregate<{ _id: { shape: string; finish: string }; totalQuantity: number; orderCount: number }>([
-      { $unwind: "$items" },
-      { $match: { "items.type": "custom" } },
-      {
-        $group: {
-          _id: { shape: { $ifNull: ["$items.shape", "Unknown"] }, finish: { $ifNull: ["$items.finish", "Unknown"] } },
-          totalQuantity: { $sum: "$items.quantity" },
-          orderCount: { $sum: 1 },
-        },
-      },
-      { $sort: { totalQuantity: -1 } },
-      { $limit: TOP_PRODUCTS_LIMIT },
-    ])
-    .toArray();
+async function getTopCustomStickers(db: D1Database): Promise<CustomStickerBreakdown[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT
+         COALESCE(shape, 'Unknown') AS shape,
+         COALESCE(finish, 'Unknown') AS finish,
+         SUM(quantity) AS totalQuantity,
+         COUNT(*) AS orderCount
+       FROM order_items
+       WHERE type = 'custom'
+       GROUP BY COALESCE(shape, 'Unknown'), COALESCE(finish, 'Unknown')
+       ORDER BY totalQuantity DESC
+       LIMIT ?`,
+    )
+    .bind(TOP_PRODUCTS_LIMIT)
+    .all<{ shape: string; finish: string; totalQuantity: number; orderCount: number }>();
 
-  return rows.map((row) => ({
-    shape: row._id.shape,
-    finish: row._id.finish,
+  return results.map((row) => ({
+    shape: row.shape,
+    finish: row.finish,
     totalQuantity: row.totalQuantity,
     orderCount: row.orderCount,
   }));
@@ -156,25 +154,25 @@ async function getTopCustomStickers(collection: Awaited<ReturnType<typeof getCol
 // REVENUE TREND (last 30 days, paid orders only)
 // ============================================================================
 
-async function getRevenueTrend(collection: Awaited<ReturnType<typeof getCollection<OrderDocument>>>): Promise<RevenuePoint[]> {
+async function getRevenueTrend(db: D1Database): Promise<RevenuePoint[]> {
   const since = new Date();
   since.setDate(since.getDate() - (REVENUE_TREND_DAYS - 1));
   since.setHours(0, 0, 0, 0);
 
-  const rows = await collection
-    .aggregate<{ _id: string; revenue: number; orderCount: number }>([
-      { $match: { paymentStatus: "paid", createdAt: { $gte: since } } },
-      {
-        $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-          revenue: { $sum: "$total" },
-          orderCount: { $sum: 1 },
-        },
-      },
-    ])
-    .toArray();
+  // created_at is always an ISO 8601 UTC string (see nowIso()), so the
+  // first 10 characters are always its YYYY-MM-DD date - a plain substr
+  // does what $dateToString did in the Mongo version.
+  const { results } = await db
+    .prepare(
+      `SELECT substr(created_at, 1, 10) AS date, SUM(total) AS revenue, COUNT(*) AS orderCount
+       FROM orders
+       WHERE payment_status = 'paid' AND created_at >= ?
+       GROUP BY date`,
+    )
+    .bind(since.toISOString())
+    .all<{ date: string; revenue: number; orderCount: number }>();
 
-  const byDate = new Map(rows.map((row) => [row._id, row]));
+  const byDate = new Map(results.map((row) => [row.date, row]));
 
   // Fill in every day in the window (including zero-revenue days) so the
   // chart has a continuous 30-day axis instead of gaps where nothing sold.
@@ -193,10 +191,10 @@ async function getRevenueTrend(collection: Awaited<ReturnType<typeof getCollecti
 // STATUS BREAKDOWN (orderStatus + paymentStatus, with percentages)
 // ============================================================================
 
-function toPercentageBreakdown(rows: { _id: string; count: number }[], total: number): StatusCount[] {
+function toPercentageBreakdown(rows: { status: string; count: number }[], total: number): StatusCount[] {
   return rows
     .map((row) => ({
-      status: row._id,
+      status: row.status,
       count: row.count,
       percentage: total > 0 ? Math.round((row.count / total) * 1000) / 10 : 0,
     }))
@@ -204,29 +202,19 @@ function toPercentageBreakdown(rows: { _id: string; count: number }[], total: nu
 }
 
 async function getStatusBreakdowns(
-  collection: Awaited<ReturnType<typeof getCollection<OrderDocument>>>,
+  db: D1Database,
 ): Promise<{ total: number; byOrderStatus: StatusCount[]; byPaymentStatus: StatusCount[] }> {
-  const [result] = await collection
-    .aggregate<{
-      byOrderStatus: { _id: string; count: number }[];
-      byPaymentStatus: { _id: string; count: number }[];
-      total: { count: number }[];
-    }>([
-      {
-        $facet: {
-          byOrderStatus: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
-          byPaymentStatus: [{ $group: { _id: "$paymentStatus", count: { $sum: 1 } } }],
-          total: [{ $count: "count" }],
-        },
-      },
-    ])
-    .toArray();
+  const [byOrderStatus, byPaymentStatus, totalRow] = await Promise.all([
+    db.prepare("SELECT status, COUNT(*) AS count FROM orders GROUP BY status").all<{ status: string; count: number }>(),
+    db.prepare("SELECT payment_status AS status, COUNT(*) AS count FROM orders GROUP BY payment_status").all<{ status: string; count: number }>(),
+    db.prepare("SELECT COUNT(*) AS count FROM orders").first<{ count: number }>(),
+  ]);
 
-  const total = result?.total[0]?.count ?? 0;
+  const total = totalRow?.count ?? 0;
   return {
     total,
-    byOrderStatus: toPercentageBreakdown(result?.byOrderStatus ?? [], total),
-    byPaymentStatus: toPercentageBreakdown(result?.byPaymentStatus ?? [], total),
+    byOrderStatus: toPercentageBreakdown(byOrderStatus.results, total),
+    byPaymentStatus: toPercentageBreakdown(byPaymentStatus.results, total),
   };
 }
 
@@ -236,14 +224,14 @@ async function getStatusBreakdowns(
 
 export async function getOrderAnalytics(): Promise<OrderAnalytics> {
   await requireAdmin();
-  const collection = await getCollection<OrderDocument>("orders");
+  const db = getD1();
 
   const [ordersByLocation, topCatalogProducts, topCustomStickers, revenueTrend, statusBreakdowns] = await Promise.all([
-    getOrdersByLocation(collection),
-    getTopCatalogProducts(collection),
-    getTopCustomStickers(collection),
-    getRevenueTrend(collection),
-    getStatusBreakdowns(collection),
+    getOrdersByLocation(db),
+    getTopCatalogProducts(db),
+    getTopCustomStickers(db),
+    getRevenueTrend(db),
+    getStatusBreakdowns(db),
   ]);
 
   return {
