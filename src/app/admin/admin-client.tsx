@@ -7,15 +7,19 @@ import { useAuth } from "@/components/auth/auth-provider";
 
 import {
   ArrowLeft,
+  BarChart3,
   CheckCircle2,
   Download,
   ExternalLink,
   Image as ImageIcon,
+  ListOrdered,
   Loader2,
   Package,
   RefreshCw,
   Truck,
 } from "lucide-react";
+
+import AnalyticsPanel from "./analytics-panel";
 
 // StoredOrder/StoredOrderItem are the locked, authoritative Order contract —
 // see src/types/order.ts. Aliased to the names this file already used.
@@ -48,6 +52,7 @@ function imageHref(imageUrl: string) {
 export default function AdminPage() {
   const router = useRouter();
   const { logout } = useAuth();
+  const [activeTab, setActiveTab] = useState<"orders" | "analytics">("orders");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -394,6 +399,31 @@ export default function AdminPage() {
           </div>
         </div>
 
+        <div className="mt-6 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("orders")}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold ${activeTab === "orders" ? "bg-black text-white" : "bg-white text-black/60 hover:bg-black/5"}`}
+          >
+            <ListOrdered size={15} /> Order desk
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("analytics")}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold ${activeTab === "analytics" ? "bg-black text-white" : "bg-white text-black/60 hover:bg-black/5"}`}
+          >
+            <BarChart3 size={15} /> Analytics
+          </button>
+        </div>
+
+        {activeTab === "analytics" && (
+          <div className="mt-8">
+            <AnalyticsPanel />
+          </div>
+        )}
+
+        {activeTab === "orders" && (
+        <>
         {error && (
           <section className="mt-8 rounded-3xl bg-white p-8 shadow-xl">
             <p className="font-bold">{error}</p>
@@ -652,6 +682,8 @@ export default function AdminPage() {
               })}
             </div>
           </>
+        )}
+        </>
         )}
       </div>
 
