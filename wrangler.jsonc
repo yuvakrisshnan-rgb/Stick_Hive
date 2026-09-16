@@ -18,5 +18,30 @@
       "database_id": "9fbfa6ce-b67c-4075-afb6-c251a99ac53a",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  // D1 lives in APAC (Singapore). Investigation into a run of 502s found
+  // all of them landed on the Marseille (MRS) edge PoP specifically -
+  // the farthest point on the globe from APAC - while every successful
+  // request in the same window was served from SIN/BOM. Smart Placement
+  // measures real request latency and relocates execution near the
+  // backend it depends on (D1 here) when that's faster than running at
+  // whatever edge node the visitor happens to hit. This needs real
+  // traffic data over time to actually start relocating - it will not
+  // change behavior on the very next request after deploy.
+  "placement": {
+    "mode": "smart"
+  },
+  // Non-sensitive config. AUTH_SECRET and RESEND_API_KEY are set via
+  // `wrangler secret put` instead (not committed to the repo).
+  //
+  // STICKHIVE_UPI_ID and AUTH_FROM_EMAIL are intentionally absent - no
+  // real UPI VPA or verified sender domain exists yet. Live UPI checkout
+  // will fail with "STICKHIVE_UPI_ID is not configured" until a real one
+  // is added here; OTP emails fall back to Resend's shared sandbox
+  // sender (onboarding@resend.dev) until AUTH_FROM_EMAIL is set.
+  "vars": {
+    "AUTH_DEBUG_OTP": "false",
+    "STICKHIVE_ADMIN_EMAILS": "yuvakrisshnan@gmail.com",
+    "STICKHIVE_UPI_NAME": "Stick Hive"
+  }
 }
