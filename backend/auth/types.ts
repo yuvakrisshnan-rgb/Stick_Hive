@@ -1,29 +1,27 @@
-import type { ObjectId } from "mongodb";
-
-export type UserDocument = {
-  _id?: ObjectId;
+export type UserRow = {
+  id: string;
   email: string;
-  emailVerifiedAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  lastLoginAt?: Date;
+  email_verified_at: string;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
 };
 
-export type OtpChallengeDocument = {
-  _id?: ObjectId;
+export type OtpChallengeRow = {
+  id: number;
   email: string;
-  codeHash: string;
+  code_hash: string;
   attempts: number;
-  maxAttempts: number;
-  expiresAt: Date;
-  lastSentAt: Date;
-  createdAt: Date;
+  max_attempts: number;
+  expires_at: string;
+  last_sent_at: string;
+  created_at: string;
 };
 
-export type SessionDocument = {
-  _id?: ObjectId;
-  userId: ObjectId;
-  tokenHash: string;
-  createdAt: Date;
-  expiresAt: Date;
+export type SessionRow = {
+  id: number;
+  user_id: string;
+  token_hash: string;
+  created_at: string;
+  expires_at: string;
 };

@@ -90,7 +90,7 @@ export default function AdminPage() {
     setError("");
     try {
       const response = await fetch("/api/admin/orders", { cache: "no-store" });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to load admin orders.");
       setOrders(data.orders || []);
     } catch (e) {
@@ -138,7 +138,7 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to update order.");
       setOrders((current) => current.map((order) => (order.orderId === orderId ? data.order : order)));
     } catch (e) {
@@ -201,7 +201,7 @@ export default function AdminPage() {
           },
         }),
       });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to verify payment.");
       setOrders((current) => current.map((order) => (order.orderId === verifyOrder.orderId ? data.order : order)));
       setVerifyOrder(null);
@@ -230,7 +230,7 @@ export default function AdminPage() {
           },
         }),
       });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to save delivery details.");
       setOrders((current) => current.map((order) => (order.orderId === shippingOrder.orderId ? data.order : order)));
       setShippingOrder(null);
@@ -269,7 +269,7 @@ export default function AdminPage() {
           heightCm: Number(heightCm),
         }),
       });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to create Delhivery shipment.");
       setOrders((current) => current.map((order) => (order.orderId === delhiveryCreateOrder.orderId ? data.order : order)));
       setDelhiveryCreateOrder(null);
@@ -312,7 +312,7 @@ export default function AdminPage() {
           expectedPackageCount: Number(expectedPackageCount),
         }),
       });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to schedule Delhivery pickup.");
       setSyncMessages((current) => ({ ...current, [delhiveryPickupOrder.orderId]: data.pickupId ? `Pickup scheduled — pickup ID ${data.pickupId}.` : "Pickup request sent." }));
       setDelhiveryPickupOrder(null);
@@ -328,7 +328,7 @@ export default function AdminPage() {
     setSyncMessages((current) => ({ ...current, [orderId]: "" }));
     try {
       const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/delhivery/sync`, { method: "POST" });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to sync Delhivery tracking.");
       if (data.result?.shippingDetails) {
         setOrders((current) => current.map((order) => (order.orderId === orderId ? { ...order, shippingDetails: data.result.shippingDetails, status: data.result.mappedStatus ?? order.status } : order)));

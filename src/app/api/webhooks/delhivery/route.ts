@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   if (!webhookSecretMatches(request)) return NextResponse.json({ success: false, error: "Unauthorized webhook." }, { status: 401 });
   try {
-    const payload = await request.json();
+    const payload = (await request.json()) as Record<string, any>;
     const event = extractTrackingEvent(payload);
     if (!event.awb) return NextResponse.json({ success: true, ignored: true, reason: "Missing AWB" });
     const result = await applyDelhiveryTrackingEvent(event);

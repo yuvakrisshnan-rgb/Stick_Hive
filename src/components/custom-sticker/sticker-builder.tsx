@@ -712,7 +712,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
       }),
     });
 
-    const prepareData = await prepareResponse.json().catch(() => ({}));
+    const prepareData = (await prepareResponse.json().catch(() => ({}))) as any;
     if (!prepareResponse.ok || !prepareData.success) {
       throw new Error(prepareData.error ?? "Unable to prepare artwork upload.");
     }

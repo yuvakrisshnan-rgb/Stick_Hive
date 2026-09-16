@@ -61,8 +61,32 @@ const CSP = [
   `frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com`,
 ].join("; ");
 
+// Plain Next.js/Turbopack (the `dev`/`build`/`start` scripts) has no Workers
+// runtime and can't resolve the real "cloudflare:workers" built-in that
+// backend/db/d1.ts imports - see backend/db/cloudflare-workers-shim.ts for
+// why a local no-op stand-in is aliased in for that path only.
+//
+// This alias must NOT apply when vinext reads this same next.config.ts
+// (`dev:vinext`/`build:vinext`) - vinext also honors turbopack.resolveAlias
+// to replicate Turbopack config for its own Vite/Rolldown resolution, which
+// would silently substitute this empty shim for the REAL workerd-provided
+// "cloudflare:workers" module, making every binding (D1 included) look
+// unconfigured. `npm_lifecycle_event` (set by npm to the running script's
+// name) distinguishes the two cases without needing a separate config file.
+const isVinextScript = (process.env.npm_lifecycle_event ?? "").includes("vinext");
+
 const nextConfig: NextConfig = {
   /* config options here */
+
+  ...(isVinextScript
+    ? {}
+    : {
+        turbopack: {
+          resolveAlias: {
+            "cloudflare:workers": "./backend/db/cloudflare-workers-shim.ts",
+          },
+        },
+      }),
 
   async headers() {
     return [

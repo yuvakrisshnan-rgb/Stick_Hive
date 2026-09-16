@@ -1,7 +1,6 @@
 import { Resend } from "resend";
-import { ObjectId } from "mongodb";
 import { cookies } from "next/headers";
-import { getCollection } from "../db/mongodb";
+import { getD1, nowIso } from "../db/d1";
 import {
   AUTH_COOKIE_NAME,
   OTP_EXPIRY_MS,
@@ -12,7 +11,7 @@ import {
   requireResendApiKey,
 } from "./config";
 import { createSessionToken, generateOtp, hashValue, normalizeEmail } from "./crypto";
-import type { OtpChallengeDocument, SessionDocument, UserDocument } from "./types";
+import type { OtpChallengeRow, SessionRow, UserRow } from "./types";
 
 function now(): Date {
   return new Date();
@@ -61,37 +60,41 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
 
 export async function requestEmailOtp(emailInput: string): Promise<{ success: true; debugCode?: string }> {
   const email = assertValidEmail(emailInput);
-  const otpCollection = await getCollection<OtpChallengeDocument>("otp_challenges");
-  const existing = await otpCollection.findOne({ email });
+  const db = getD1();
+
+  // No expires_at filter here on purpose: the resend cooldown should apply
+  // based on when a code was last sent, regardless of whether that code
+  // itself has since expired - matches the original Mongo behavior exactly.
+  const existing = await db.prepare("SELECT * FROM otp_challenges WHERE email = ?").bind(email).first<OtpChallengeRow>();
   const current = Date.now();
 
-  if (existing && current - existing.lastSentAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
+  if (existing && current - new Date(existing.last_sent_at).getTime() < OTP_RESEND_COOLDOWN_MS) {
     throw new Error("Please wait a moment before requesting another code.");
   }
 
   const code = generateOtp();
   const createdAt = now();
+  const expiresAt = new Date(current + OTP_EXPIRY_MS);
 
-  await otpCollection.updateOne(
-    { email },
-    {
-      $set: {
-        codeHash: hashValue(code),
-        attempts: 0,
-        maxAttempts: OTP_MAX_ATTEMPTS,
-        expiresAt: new Date(current + OTP_EXPIRY_MS),
-        lastSentAt: createdAt,
-        createdAt,
-      },
-      $setOnInsert: { email },
-    },
-    { upsert: true },
-  );
+  await db
+    .prepare(
+      `INSERT INTO otp_challenges (email, code_hash, attempts, max_attempts, expires_at, last_sent_at, created_at)
+       VALUES (?, ?, 0, ?, ?, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET
+         code_hash = excluded.code_hash,
+         attempts = 0,
+         max_attempts = excluded.max_attempts,
+         expires_at = excluded.expires_at,
+         last_sent_at = excluded.last_sent_at,
+         created_at = excluded.created_at`,
+    )
+    .bind(email, hashValue(code), OTP_MAX_ATTEMPTS, expiresAt.toISOString(), createdAt.toISOString(), createdAt.toISOString())
+    .run();
 
   try {
     await sendOtpEmail(email, code);
   } catch (error) {
-    await otpCollection.deleteOne({ email });
+    await db.prepare("DELETE FROM otp_challenges WHERE email = ?").bind(email).run();
     throw error;
   }
 
@@ -110,58 +113,66 @@ export async function verifyEmailOtp(emailInput: string, codeInput: string): Pro
     throw new Error("Enter the 6-digit verification code.");
   }
 
-  const otpCollection = await getCollection<OtpChallengeDocument>("otp_challenges");
-  const challenge = await otpCollection.findOne({ email });
+  const db = getD1();
+
+  // Read the row regardless of expiry (not `WHERE ... AND expires_at > ?`)
+  // so the two failure cases below can give distinct error messages - "no
+  // code found" vs "code expired" - matching the original behavior. The
+  // expires_at check still happens, just in application code right after.
+  const challenge = await db.prepare("SELECT * FROM otp_challenges WHERE email = ?").bind(email).first<OtpChallengeRow>();
 
   if (!challenge) {
     throw new Error("No verification code found. Please request a new one.");
   }
-  if (challenge.expiresAt.getTime() <= Date.now()) {
-    await otpCollection.deleteOne({ _id: challenge._id });
+  if (new Date(challenge.expires_at).getTime() <= Date.now()) {
+    await db.prepare("DELETE FROM otp_challenges WHERE id = ?").bind(challenge.id).run();
     throw new Error("This code has expired. Please request a new one.");
   }
-  if (challenge.attempts >= challenge.maxAttempts) {
-    await otpCollection.deleteOne({ _id: challenge._id });
+  if (challenge.attempts >= challenge.max_attempts) {
+    await db.prepare("DELETE FROM otp_challenges WHERE id = ?").bind(challenge.id).run();
     throw new Error("Too many attempts. Please request a new code.");
   }
 
-  const expectedHash = challenge.codeHash;
+  const expectedHash = challenge.code_hash;
   const providedHash = hashValue(code);
 
   if (providedHash !== expectedHash) {
-    await otpCollection.updateOne({ _id: challenge._id }, { $inc: { attempts: 1 } });
+    await db.prepare("UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = ?").bind(challenge.id).run();
     throw new Error("Incorrect code. Please try again.");
   }
 
-  await otpCollection.deleteOne({ _id: challenge._id });
+  await db.prepare("DELETE FROM otp_challenges WHERE id = ?").bind(challenge.id).run();
 
-  const users = await getCollection<UserDocument>("users");
   const verifiedAt = now();
-  const userId = new ObjectId();
+  const userId = crypto.randomUUID();
 
-  await users.updateOne(
-    { email },
-    {
-      $set: { emailVerifiedAt: verifiedAt, updatedAt: verifiedAt, lastLoginAt: verifiedAt },
-      $setOnInsert: { _id: userId, email, createdAt: verifiedAt },
-    },
-    { upsert: true },
-  );
+  // On conflict (existing user), only touch the verification/login fields -
+  // id/email/created_at are intentionally excluded from the UPDATE SET so
+  // an existing user's identity and original signup date never change.
+  await db
+    .prepare(
+      `INSERT INTO users (id, email, email_verified_at, created_at, updated_at, last_login_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET
+         email_verified_at = excluded.email_verified_at,
+         updated_at = excluded.updated_at,
+         last_login_at = excluded.last_login_at`,
+    )
+    .bind(userId, email, verifiedAt.toISOString(), verifiedAt.toISOString(), verifiedAt.toISOString(), verifiedAt.toISOString())
+    .run();
 
-  const user = await users.findOne({ email });
-  if (!user?._id) {
+  const user = await db.prepare("SELECT * FROM users WHERE email = ?").bind(email).first<UserRow>();
+  if (!user?.id) {
     throw new Error("Unable to create your account session.");
   }
 
   const sessionToken = createSessionToken();
-  const sessions = await getCollection<SessionDocument>("sessions");
   const sessionNow = now();
-  await sessions.insertOne({
-    userId: user._id,
-    tokenHash: hashValue(sessionToken),
-    createdAt: sessionNow,
-    expiresAt: new Date(sessionNow.getTime() + SESSION_MAX_AGE_SECONDS * 1000),
-  });
+  const sessionExpiresAt = new Date(sessionNow.getTime() + SESSION_MAX_AGE_SECONDS * 1000);
+  await db
+    .prepare("INSERT INTO sessions (user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)")
+    .bind(user.id, hashValue(sessionToken), sessionNow.toISOString(), sessionExpiresAt.toISOString())
+    .run();
 
   const cookieStore = await cookies();
   cookieStore.set(AUTH_COOKIE_NAME, sessionToken, {
@@ -172,7 +183,7 @@ export async function verifyEmailOtp(emailInput: string, codeInput: string): Pro
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
 
-  return { success: true, user: { id: user._id.toHexString(), email: user.email } };
+  return { success: true, user: { id: user.id, email: user.email } };
 }
 
 export type CurrentUser = { id: string; email: string };
@@ -193,19 +204,22 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
   if (!token) return null;
 
-  const sessions = await getCollection<SessionDocument>("sessions");
-  const session = await sessions.findOne({
-    tokenHash: hashValue(token),
-    expiresAt: { $gt: new Date() },
-  });
+  const db = getD1();
+  // expires_at filtered directly in the query, same as the original Mongo
+  // $gt filter - no distinct error message is needed here, so pushing the
+  // check into SQL (rather than a post-read check like verifyEmailOtp
+  // above) is fine.
+  const session = await db
+    .prepare("SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?")
+    .bind(hashValue(token), nowIso())
+    .first<SessionRow>();
 
-  if (!session?.userId) return null;
+  if (!session?.user_id) return null;
 
-  const users = await getCollection<UserDocument>("users");
-  const user = await users.findOne({ _id: session.userId });
+  const user = await db.prepare("SELECT * FROM users WHERE id = ?").bind(session.user_id).first<UserRow>();
   if (!user) return null;
 
-  return { id: user._id!.toHexString(), email: user.email };
+  return { id: user.id, email: user.email };
 }
 
 export async function logout(): Promise<void> {
@@ -213,10 +227,9 @@ export async function logout(): Promise<void> {
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
 
   if (token) {
-    const sessions = await getCollection<SessionDocument>("sessions");
-    await sessions.deleteOne({ tokenHash: hashValue(token) });
+    const db = getD1();
+    await db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(hashValue(token)).run();
   }
 
   cookieStore.delete(AUTH_COOKIE_NAME);
 }
-

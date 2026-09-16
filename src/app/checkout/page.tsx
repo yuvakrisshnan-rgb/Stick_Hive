@@ -125,7 +125,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     let active = true;
     void fetch("/api/payments/razorpay/status")
-      .then((response) => response.json())
+      .then((response) => response.json() as any)
       .then((data) => {
         if (!active) return;
         setRazorpayEnabled(Boolean(data?.enabled));
@@ -420,7 +420,7 @@ export default function CheckoutPage() {
         }),
       });
 
-      const orderData = await orderResponse.json();
+      const orderData = (await orderResponse.json()) as any;
       if (!orderResponse.ok || !orderData.success) {
         throw new Error(orderData.error ?? "Unable to place your order.");
       }

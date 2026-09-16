@@ -252,7 +252,7 @@ export default function CustomerForm({
         body: JSON.stringify({ email: customer.email }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       if (!data.success) {
         setOtpError(data.error ?? "Unable to send verification code.");
@@ -289,7 +289,7 @@ export default function CustomerForm({
         body: JSON.stringify({ email: customer.email, code: otpCode }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       if (!data.success) {
         setOtpError(data.error ?? "Incorrect code.");

@@ -196,7 +196,7 @@ export default function AnalyticsPanel() {
     setError("");
     try {
       const response = await fetch("/api/admin/analytics", { cache: "no-store" });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data.success) throw new Error(data.error || "Unable to load analytics.");
       setAnalytics(data.analytics as OrderAnalytics);
     } catch (e) {

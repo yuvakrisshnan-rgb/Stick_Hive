@@ -313,7 +313,7 @@ function OrderSuccessContent() {
 
       try {
         const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { cache: "no-store" });
-        const data = await response.json();
+        const data = (await response.json()) as any;
         if (response.ok && data?.success && data.order) {
           const nextOrder = data.order as StoredOrder;
           if (active) {
@@ -369,7 +369,7 @@ function OrderSuccessContent() {
     const sync = async () => {
       try {
         const response = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}/payment-sync`, { method: "POST", cache: "no-store" });
-        const data = await response.json().catch(() => null);
+        const data = (await response.json().catch(() => null)) as any;
         if (!stopped && response.ok && data?.success && data.order) setOrder(data.order as StoredOrder);
       } catch {
         // Payment may simply still be pending; do not interrupt the checkout screen.
@@ -592,7 +592,7 @@ function OrderSuccessContent() {
     setIsRetryingPayment(true);
     try {
       const response = await fetch(`/api/orders/${encodeURIComponent(currentOrder.orderId)}/payment-retry`, { method: "POST" });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data?.success) throw new Error(data?.error ?? "Unable to restart payment.");
       setOrder(data.order as StoredOrder);
       setQrDataUrl("");
@@ -617,7 +617,7 @@ function OrderSuccessContent() {
         `/api/orders/${encodeURIComponent(currentOrder.orderId)}/payment-claim`,
         { method: "POST" },
       );
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data?.success) {
         throw new Error(data?.error ?? "Unable to record your payment confirmation.");
       }
@@ -645,7 +645,7 @@ function OrderSuccessContent() {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       try {
         const response = await fetch(`/api/orders/${encodeURIComponent(currentOrder.orderId)}`, { cache: "no-store" });
-        const data = await response.json();
+        const data = (await response.json()) as any;
         if (response.ok && data?.success && data.order) {
           setOrder(data.order as StoredOrder);
           if (data.order.paymentStatus === "paid") {
@@ -675,7 +675,7 @@ function OrderSuccessContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId: currentOrder.orderId }),
       });
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (!response.ok || !data?.success) throw new Error(data?.error ?? "Unable to start payment.");
 
       const razorpay = new window.Razorpay({

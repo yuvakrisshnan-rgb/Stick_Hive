@@ -27,7 +27,7 @@ function TrackOrderContent() {
     if (!orderId) { setError("No order ID was provided."); setLoading(false); return; }
     let active = true;
     void fetch(`/api/orders/${encodeURIComponent(orderId)}`, { cache: "no-store" }).then(async (r) => {
-      const data = await r.json().catch(() => null);
+      const data = (await r.json().catch(() => null)) as any;
       if (!r.ok || !data?.success) throw new Error(data?.error || "Unable to load your order.");
       if (active) setOrder(data.order);
     }).catch((e) => active && setError(e instanceof Error ? e.message : "Unable to load your order.")).finally(() => active && setLoading(false));
