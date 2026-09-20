@@ -22,3 +22,8 @@ test-results/
 # are a backstop in case it's ever copied in locally for convenience.
 /sticker-intake-source/
 /stickers-raw/
+
+# Locally-generated product image build output
+# (scripts/optimize-product-images.mjs). Derived from source images
+# outside the repo; never committed.
+/public/product-images-build/
