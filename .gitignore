@@ -15,3 +15,10 @@ test-results/
 /dist/
 .vinext/
 .wrangler/
+
+# Sticker intake (scripts/sticker-intake.mjs): raw source images must never
+# be committed. The real source folder lives outside the repo (in
+# Downloads), so it can't be committed by accident either way, but these
+# are a backstop in case it's ever copied in locally for convenience.
+/sticker-intake-source/
+/stickers-raw/
