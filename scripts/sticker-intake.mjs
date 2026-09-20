@@ -60,12 +60,15 @@ const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const CONVERTIBLE_EXTENSIONS = new Set([".avif"]);
 
 // Source-relative paths (forward slashes) to exclude entirely - no CSV row,
-// reported separately from ordinary "not a sticker" skips. Currently just
-// the one converted flower image whose embedded XMP metadata carries a
-// "Rawpixel Ltd." / rawpixel.com copyright stamp, i.e. it looks like a
-// licensed stock photo rather than free-to-use source art.
-const EXCLUDED_SOURCE_PATHS = new Set([
-  "flower stickers/copydwproject7batch2-adj-08-flowerpaintingidea-o.png",
+// reported separately from ordinary "not a sticker" skips. Both entries
+// are stock imagery, not free-to-use source art: the converted flower
+// image's embedded XMP metadata carries a "Rawpixel Ltd." copyright
+// stamp, and the lilac-basket image has a visible tiled "Vecteezy"
+// watermark baked right into the pixels (an unlicensed preview download,
+// not something usable even after editing).
+const EXCLUDED_SOURCE_PATHS = new Map([
+  ["flower stickers/copydwproject7batch2-adj-08-flowerpaintingidea-o.png", "possible stock-photo license (Rawpixel-stamped metadata)"],
+  ["flower stickers/6e2695867a1d46ac62dd41422a49f0b8.jpg", "unlicensed stock preview (visible tiled Vecteezy watermark)"],
 ]);
 
 const DEFAULT_SOURCE = String.raw`C:\Users\Yuva\Downloads\drive-download-20260920T111928Z-1-001`;
@@ -266,7 +269,7 @@ async function cmdScan(args) {
     seenThisRun.add(relPath);
 
     if (EXCLUDED_SOURCE_PATHS.has(relPath)) {
-      excluded.push({ path: relPath, reason: "possible stock-photo license (Rawpixel-stamped)" });
+      excluded.push({ path: relPath, reason: EXCLUDED_SOURCE_PATHS.get(relPath) });
       continue;
     }
 
