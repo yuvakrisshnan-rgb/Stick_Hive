@@ -60,17 +60,22 @@ const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const CONVERTIBLE_EXTENSIONS = new Set([".avif"]);
 
 // Source-relative paths (forward slashes) to exclude entirely - no CSV row,
-// reported separately from ordinary "not a sticker" skips. Both entries
-// are stock imagery, not free-to-use source art: the converted flower
-// image's embedded XMP metadata carries a "Rawpixel Ltd." copyright
-// stamp, and the lilac-basket image has a visible tiled "Vecteezy"
-// watermark baked right into the pixels (an unlicensed preview download,
-// not something usable even after editing).
+// reported separately from ordinary "not a sticker" skips. Most entries are
+// stock imagery, not free-to-use source art: the converted flower image's
+// embedded XMP metadata carries a "Rawpixel Ltd." copyright stamp, and the
+// lilac-basket image has a visible tiled "Vecteezy" watermark baked right
+// into the pixels (an unlicensed preview download, not something usable
+// even after editing). One entry is not a licensing issue at all: it's a
+// real, identifiable photo of a young, non-consenting child, used as the
+// product image itself with profanity - permanently excluded regardless of
+// licensing, never a candidate for needs_review, never re-addable by a
+// future scan.
 const EXCLUDED_SOURCE_PATHS = new Map([
   ["flower stickers/copydwproject7batch2-adj-08-flowerpaintingidea-o.png", "possible stock-photo license (Rawpixel-stamped metadata)"],
   ["flower stickers/6e2695867a1d46ac62dd41422a49f0b8.jpg", "unlicensed stock preview (visible tiled Vecteezy watermark)"],
   ["Rick and Morty/a0d862d9dd72a960975a9c079dc90b29.jpg", "unlicensed stock preview (visible tiled padlock watermark)"],
   ["Rick and Morty/ec4da4b7ad8e8c386336d5c0b724a913.webp.jpg", "not a sticker - fine-art stippled giraffe illustration, no die-cut/sticker styling and unrelated to any category"],
+  ["Anime/download.png", "identifiable photo of a real, non-consenting child - permanently excluded, never seeded or uploaded"],
 ]);
 
 const DEFAULT_SOURCE = String.raw`C:\Users\Yuva\Downloads\drive-download-20260920T111928Z-1-001`;
