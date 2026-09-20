@@ -11,6 +11,15 @@ import { afterEach, beforeEach, test } from "node:test";
 
 import { UNKNOWN_CLIENT_IP, checkRateLimit, getClientIp, rateLimit } from "../../backend/security/rate-limit.ts";
 
+// Next.js declares NODE_ENV as readonly in its ambient global types
+// (node_modules/next/types/global.d.ts) - true at runtime for `next
+// build`'s own bundling, but these tests genuinely need to flip it to
+// exercise both branches. Routing every assignment through a mutable-cast
+// helper, rather than sprinkling `as any` at each call site.
+function setNodeEnv(value: string | undefined): void {
+  (process.env as { NODE_ENV?: string }).NODE_ENV = value;
+}
+
 let originalNodeEnv: string | undefined;
 
 beforeEach(() => {
@@ -18,7 +27,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.env.NODE_ENV = originalNodeEnv;
+  setNodeEnv(originalNodeEnv);
 });
 
 function requestWithHeaders(headers: Record<string, string>): Request {
@@ -26,13 +35,13 @@ function requestWithHeaders(headers: Record<string, string>): Request {
 }
 
 test("production: CF-Connecting-IP is used as the client IP", () => {
-  process.env.NODE_ENV = "production";
+  setNodeEnv("production");
   const request = requestWithHeaders({ "cf-connecting-ip": "203.0.113.7" });
   assert.equal(getClientIp(request), "203.0.113.7");
 });
 
 test("production: a spoofed X-Forwarded-For is ignored - never used as the client IP", () => {
-  process.env.NODE_ENV = "production";
+  setNodeEnv("production");
   const request = requestWithHeaders({ "x-forwarded-for": "6.6.6.6" });
   const ip = getClientIp(request);
   assert.notEqual(ip, "6.6.6.6");
@@ -40,7 +49,7 @@ test("production: a spoofed X-Forwarded-For is ignored - never used as the clien
 });
 
 test("production: CF-Connecting-IP wins even when a spoofed X-Forwarded-For is also present", () => {
-  process.env.NODE_ENV = "production";
+  setNodeEnv("production");
   const request = requestWithHeaders({
     "cf-connecting-ip": "203.0.113.9",
     "x-forwarded-for": "6.6.6.6",
@@ -49,19 +58,19 @@ test("production: CF-Connecting-IP wins even when a spoofed X-Forwarded-For is a
 });
 
 test("production: no CF-Connecting-IP and no X-Forwarded-For also falls back to the unknown sentinel", () => {
-  process.env.NODE_ENV = "production";
+  setNodeEnv("production");
   const request = requestWithHeaders({});
   assert.equal(getClientIp(request), UNKNOWN_CLIENT_IP);
 });
 
 test("local dev: X-Forwarded-For is used when CF-Connecting-IP is absent", () => {
-  process.env.NODE_ENV = "development";
+  setNodeEnv("development");
   const request = requestWithHeaders({ "x-forwarded-for": "198.51.100.4" });
   assert.equal(getClientIp(request), "198.51.100.4");
 });
 
 test("local dev: CF-Connecting-IP still wins over X-Forwarded-For when both are present", () => {
-  process.env.NODE_ENV = "development";
+  setNodeEnv("development");
   const request = requestWithHeaders({
     "cf-connecting-ip": "203.0.113.11",
     "x-forwarded-for": "198.51.100.4",
@@ -70,7 +79,7 @@ test("local dev: CF-Connecting-IP still wins over X-Forwarded-For when both are 
 });
 
 test("local dev: no headers at all fails open (null), same as before", () => {
-  process.env.NODE_ENV = "development";
+  setNodeEnv("development");
   const request = requestWithHeaders({});
   assert.equal(getClientIp(request), null);
 });
