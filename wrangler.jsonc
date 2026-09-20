@@ -31,6 +31,15 @@
   "placement": {
     "mode": "smart"
   },
+  // Daily cleanup of expired otp_challenges/sessions rows (see
+  // backend/db/cleanup.ts and worker/index.ts's `scheduled` export).
+  // 03:00 UTC - low-traffic window, arbitrary otherwise; the job is
+  // idempotent and can safely run at any time.
+  "triggers": {
+    "crons": [
+      "0 3 * * *"
+    ]
+  },
   // Non-sensitive config. AUTH_SECRET and RESEND_API_KEY are set via
   // `wrangler secret put` instead (not committed to the repo).
   //
