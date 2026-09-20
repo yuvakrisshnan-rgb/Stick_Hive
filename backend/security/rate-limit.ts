@@ -100,6 +100,14 @@ function getUpstashLimiter(bucket: string, maxRequests: number, windowMs: number
  * route or failing open with no limit at all.
  */
 export async function rateLimit(key: string, maxRequests: number, windowMs: number): Promise<boolean> {
+  // Collapse the shared "unknown IP" bucket (see getClientIp()) onto a
+  // strict cap regardless of what the caller asked for - a request with no
+  // trustworthy IP must never get the same generous limit as a real,
+  // distinguishable client.
+  if (key.endsWith(`:${UNKNOWN_CLIENT_IP}`)) {
+    maxRequests = Math.min(maxRequests, UNKNOWN_IP_MAX_REQUESTS);
+  }
+
   if (!isUpstashConfigured()) {
     if (!hasWarnedUpstashUnavailable) {
       hasWarnedUpstashUnavailable = true;
@@ -136,39 +144,83 @@ export async function rateLimit(key: string, maxRequests: number, windowMs: numb
 }
 
 let hasWarnedMissingIpHeader = false;
+let hasWarnedMissingCfConnectingIp = false;
 
-// Returns null when neither proxy header is present, instead of a placeholder
-// like "unknown" — callers must skip rate limiting (fail open) in that case
-// rather than keying every request off the same placeholder value, which
-// would silently merge every visitor into one shared bucket and let a
-// handful of requests lock out the whole site. Blocking real users because a
-// proxy header is missing is worse than temporarily having no per-IP limit
-// for that edge case.
-//
-// NOTE: on Cloudflare Workers the trustworthy header is CF-Connecting-IP,
-// set by Cloudflare's edge itself. X-Forwarded-For as read here is whatever
-// the client sent - Cloudflare doesn't strip or overwrite it - so a caller
-// can currently set an arbitrary value and reset their own rate-limit
-// bucket on every request. Flagging this rather than changing the trust
-// model here, since it's a behavior change beyond what was asked.
+// Sentinel returned by getClientIp() when running in production with no
+// trustworthy IP available. Every caller composes its rate-limit key as
+// `${bucket}:${ip}` (see the 9 call sites across src/app/api/**), so a
+// request landing here collapses into one shared, strictly-limited bucket
+// per route instead of getting its own uncapped bucket - see UNKNOWN_IP_MAX
+// below, enforced in rateLimit().
+export const UNKNOWN_CLIENT_IP = "unknown";
+
+// A request lacking a trustworthy IP still needs *some* limit, or it
+// becomes an unlimited loophole the moment an attacker omits every IP
+// header. Deliberately tighter than any legitimate per-route limit (the
+// tightest today is send-otp's 5/10min) since many unrelated real users
+// could collide into this one bucket - capping hard here trades a little
+// false-positive risk (on the "should never happen for real Cloudflare
+// traffic" branch) for closing the loophole.
+const UNKNOWN_IP_MAX_REQUESTS = 3;
+
+/**
+ * Resolves the client IP to key rate limits off. Trust model:
+ *
+ * 1. CF-Connecting-IP, when present - set by Cloudflare's edge itself from
+ *    the real TCP connection, not copied from any client-supplied header,
+ *    so it cannot be spoofed by a request's own headers. Used whenever
+ *    present, in any environment.
+ * 2. X-Forwarded-For / X-Real-IP, but ONLY outside production (i.e. only
+ *    when CF-Connecting-IP is absent AND we're not running on Cloudflare -
+ *    local `next dev` has no edge in front to set/strip these, so they're
+ *    only ever a developer convenience on your own machine, never trusted
+ *    for a real deployment). NEVER consulted in production - Cloudflare
+ *    passes through whatever X-Forwarded-For value the client sent without
+ *    stripping it, so trusting it in production would let any caller reset
+ *    their own rate-limit bucket per request just by changing the header.
+ * 3. In production with no CF-Connecting-IP (shouldn't happen for genuine
+ *    Cloudflare-routed traffic - defense in depth for the case where it
+ *    somehow doesn't), returns the UNKNOWN_CLIENT_IP sentinel rather than
+ *    falling back to a client-suppliable header or failing open.
+ */
 export function getClientIp(request: Request): string | null {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const [firstIp] = forwardedFor.split(",");
-    if (firstIp?.trim()) return firstIp.trim();
+  const cfConnectingIp = request.headers.get("cf-connecting-ip");
+  if (cfConnectingIp?.trim()) {
+    return cfConnectingIp.trim();
   }
 
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp?.trim()) return realIp.trim();
+  const isProduction = process.env.NODE_ENV === "production";
 
-  if (!hasWarnedMissingIpHeader) {
-    hasWarnedMissingIpHeader = true;
-    console.warn(
-      "[rate-limit] Neither x-forwarded-for nor x-real-ip is set on this request. " +
-        "Rate limiting will fail open (allow all requests) until a proxy header is present. " +
-        "Check that the hosting platform/reverse proxy forwards the client IP.",
+  if (!isProduction) {
+    const forwardedFor = request.headers.get("x-forwarded-for");
+    if (forwardedFor) {
+      const [firstIp] = forwardedFor.split(",");
+      if (firstIp?.trim()) return firstIp.trim();
+    }
+
+    const realIp = request.headers.get("x-real-ip");
+    if (realIp?.trim()) return realIp.trim();
+
+    if (!hasWarnedMissingIpHeader) {
+      hasWarnedMissingIpHeader = true;
+      console.warn(
+        "[rate-limit] Neither cf-connecting-ip, x-forwarded-for, nor x-real-ip is set on this request. " +
+          "Rate limiting will fail open (allow all requests) until one is present. Expected on a bare " +
+          "local dev server with no proxy in front; check your setup if you see this elsewhere.",
+      );
+    }
+
+    return null;
+  }
+
+  if (!hasWarnedMissingCfConnectingIp) {
+    hasWarnedMissingCfConnectingIp = true;
+    console.error(
+      "[rate-limit] PRODUCTION: request had no CF-Connecting-IP header. This should not happen for traffic " +
+        "actually routed through Cloudflare - falling back to the shared, strictly-limited 'unknown' bucket " +
+        "rather than trusting any client-supplied header (X-Forwarded-For is not consulted in production).",
     );
   }
 
-  return null;
+  return UNKNOWN_CLIENT_IP;
 }

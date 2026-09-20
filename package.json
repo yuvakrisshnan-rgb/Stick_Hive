@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
+    "test:unit": "node --test tests/unit/*.test.ts",
     "dev:vinext": "vinext dev --port 3001",
     "build:vinext": "vinext build",
     "start:vinext": "wrangler dev --config dist/server/wrangler.json",
