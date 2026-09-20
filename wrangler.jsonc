@@ -19,6 +19,17 @@
       "migrations_dir": "migrations"
     }
   ],
+  // The bucket itself does not exist yet - this binding is config only.
+  // See scripts/upload-product-images-r2.mjs's header comment for the
+  // exact `wrangler r2 bucket create`/`dev-url enable` commands to run
+  // before this binding refers to anything real. Local dev tolerates an
+  // as-yet-nonexistent remote bucket the same way it already does for D1.
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "stickhive-product-images"
+    }
+  ],
   // D1 lives in APAC (Singapore). Investigation into a run of 502s found
   // all of them landed on the Marseille (MRS) edge PoP specifically -
   // the farthest point on the globe from APAC - while every successful
