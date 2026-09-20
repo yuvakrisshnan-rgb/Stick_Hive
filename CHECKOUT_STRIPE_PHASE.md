@@ -1,5 +1,9 @@
 # Stick Hive — Checkout, Custom Artwork & Stripe Phase
 
+> **Outdated:** "MongoDB" below now means Cloudflare D1 - the persistence
+> layer was migrated after this doc was written. See `migrations/` for
+> the schema and `backend/db/d1.ts` for the accessor.
+
 ## What is now wired
 
 - `POST /api/orders` accepts the checkout payload and recomputes product/custom pricing on the server.

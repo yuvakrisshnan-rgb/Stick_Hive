@@ -14,10 +14,15 @@ This archive contains the Stick Hive source supplied for this integration, with 
 
 ## Required environment
 
+> **Outdated:** persistence moved from MongoDB to Cloudflare D1 after this
+> doc was written - there's no connection-string env var to set anymore.
+> D1 is a binding, configured in `wrangler.jsonc`'s `d1_databases` (local
+> dev reads `.dev.vars`; production secrets are set via `wrangler secret
+> put`, not `.env.local`). See `migrations/` for the schema and
+> `backend/db/d1.ts` for the accessor.
+
 Create `.env.local` in the project root:
 
-MONGODB_URI=...
-MONGODB_DB_NAME=stickhive
 RESEND_API_KEY=...
 AUTH_FROM_EMAIL=Stick Hive <noreply@stickhive.app>
 

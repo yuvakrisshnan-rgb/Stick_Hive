@@ -8,6 +8,12 @@ This is the primary AI handoff document for StickHive. Read it before
 modifying the project. Use it with the actual repository; the repository
 code is the final source of truth.
 
+> **Outdated:** references to MongoDB below (including the session log at
+> the end of this file) describe an earlier backend. The project now runs
+> on Cloudflare Workers + D1 - see `migrations/` for the schema and
+> `backend/db/d1.ts` for the D1 accessor. Left as-is rather than rewritten,
+> since it's a historical record of a specific session, not living docs.
+
 1. Project
 
 StickHive is a creative sticker e-commerce brand. The idea began as a

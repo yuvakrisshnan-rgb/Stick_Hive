@@ -2,6 +2,12 @@
 
 Implemented without wiring checkout/payment yet.
 
+> **Outdated:** "MongoDB" below now means Cloudflare D1 - the persistence
+> layer was migrated after this doc was written. See `migrations/` for
+> the schema and `backend/db/d1.ts` for the accessor. The described
+> behavior (guest localStorage, merge-on-login, auth-scoped queries)
+> is still accurate.
+
 ## User wishlist
 - Guests keep wishlist in localStorage.
 - Authenticated users get a MongoDB-backed wishlist.
