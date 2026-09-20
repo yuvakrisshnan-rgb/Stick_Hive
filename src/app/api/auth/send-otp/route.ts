@@ -15,7 +15,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Too many requests. Please try again later." }, { status: 429 });
     }
 
-    const body = schema.parse(await request.json());
+    let payload: unknown;
+    try {
+      payload = await request.json();
+    } catch {
+      return NextResponse.json({ success: false, error: "Invalid request." }, { status: 400 });
+    }
+
+    const body = schema.parse(payload);
     const result = await requestEmailOtp(body.email);
     return NextResponse.json(result);
   } catch (error) {
