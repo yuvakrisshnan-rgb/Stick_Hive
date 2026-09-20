@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit",
     "storage:local-cors": "node scripts/configure-local-s3-cors.mjs",
     "admin:path": "node scripts/show-admin-path.mjs",
+    "products:validate": "node scripts/seed-products.mjs validate",
+    "products:seed": "node scripts/seed-products.mjs seed",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",

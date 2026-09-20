@@ -27,9 +27,10 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 
-const CSV_COLUMNS = [
+export const CSV_COLUMNS = [
   "filename",
   "name",
   "slug",
@@ -56,8 +57,8 @@ const CSV_COLUMNS = [
 // - status: "draft" for anything needs_review or flagged mature, "active"
 //   otherwise - nothing questionable goes live by default.
 
-const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
-const CONVERTIBLE_EXTENSIONS = new Set([".avif"]);
+export const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+export const CONVERTIBLE_EXTENSIONS = new Set([".avif"]);
 
 // Source-relative paths (forward slashes) to exclude entirely - no CSV row,
 // reported separately from ordinary "not a sticker" skips. Most entries are
@@ -70,7 +71,7 @@ const CONVERTIBLE_EXTENSIONS = new Set([".avif"]);
 // product image itself with profanity - permanently excluded regardless of
 // licensing, never a candidate for needs_review, never re-addable by a
 // future scan.
-const EXCLUDED_SOURCE_PATHS = new Map([
+export const EXCLUDED_SOURCE_PATHS = new Map([
   ["flower stickers/copydwproject7batch2-adj-08-flowerpaintingidea-o.png", "possible stock-photo license (Rawpixel-stamped metadata)"],
   ["flower stickers/6e2695867a1d46ac62dd41422a49f0b8.jpg", "unlicensed stock preview (visible tiled Vecteezy watermark)"],
   ["Rick and Morty/a0d862d9dd72a960975a9c079dc90b29.jpg", "unlicensed stock preview (visible tiled padlock watermark)"],
@@ -78,8 +79,8 @@ const EXCLUDED_SOURCE_PATHS = new Map([
   ["Anime/download.png", "identifiable photo of a real, non-consenting child - permanently excluded, never seeded or uploaded"],
 ]);
 
-const DEFAULT_SOURCE = String.raw`C:\Users\Yuva\Downloads\drive-download-20260920T111928Z-1-001`;
-const DEFAULT_CSV = path.resolve(process.cwd(), "stickers.csv");
+export const DEFAULT_SOURCE = String.raw`C:\Users\Yuva\Downloads\drive-download-20260920T111928Z-1-001`;
+export const DEFAULT_CSV = path.resolve(process.cwd(), "stickers.csv");
 
 // ---------------------------------------------------------------------------
 // CSV read/write (hand-rolled RFC4180-ish - no CSV library is a dependency
@@ -98,7 +99,7 @@ function csvRow(fields) {
   return CSV_COLUMNS.map((col) => csvEscape(fields[col])).join(",") + "\n";
 }
 
-function parseCsv(text) {
+export function parseCsv(text) {
   const rows = [];
   let row = [];
   let field = "";
@@ -139,7 +140,7 @@ function parseCsv(text) {
   return rows.filter((r) => !(r.length === 1 && r[0] === ""));
 }
 
-async function loadExisting(csvPath) {
+export async function loadExisting(csvPath) {
   if (!fs.existsSync(csvPath)) {
     return { rows: [], hashes: new Set(), slugs: new Set() };
   }
@@ -167,7 +168,7 @@ async function loadExisting(csvPath) {
 // Filesystem helpers
 // ---------------------------------------------------------------------------
 
-async function sha256File(filePath) {
+export async function sha256File(filePath) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash("sha256");
     const stream = fs.createReadStream(filePath);
@@ -177,7 +178,7 @@ async function sha256File(filePath) {
   });
 }
 
-async function walk(dir) {
+export async function walk(dir) {
   const out = [];
   const entries = await fsp.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
@@ -415,20 +416,30 @@ async function cmdReport(args) {
 // ---------------------------------------------------------------------------
 // entry point
 // ---------------------------------------------------------------------------
+//
+// Guarded so this file can also be `import`ed for its exported helpers (by
+// scripts/seed-products.mjs etc.) without triggering the CLI dispatch below -
+// without this guard, an import would run with the importing process's own
+// argv, match none of scan/append/report, and process.exit(1) immediately.
+// Compared via pathToFileURL (not a raw string/argv comparison) because
+// process.argv[1] uses backslashes on Windows and lacks the extra leading
+// "/" that import.meta.url has for a drive-letter path.
 
 const [, , command, ...rest] = process.argv;
 
-switch (command) {
-  case "scan":
-    await cmdScan(rest);
-    break;
-  case "append":
-    await cmdAppend(rest);
-    break;
-  case "report":
-    await cmdReport(rest);
-    break;
-  default:
-    console.error("Usage: node scripts/sticker-intake.mjs <scan|append|report> [options]");
-    process.exit(1);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  switch (command) {
+    case "scan":
+      await cmdScan(rest);
+      break;
+    case "append":
+      await cmdAppend(rest);
+      break;
+    case "report":
+      await cmdReport(rest);
+      break;
+    default:
+      console.error("Usage: node scripts/sticker-intake.mjs <scan|append|report> [options]");
+      process.exit(1);
+  }
 }
