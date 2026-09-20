@@ -1,19 +1,22 @@
 // Rate limiting with two tiers:
 //
-// 1. In-memory (always available, no setup) — correct for a single running
-//    server instance only. Counts live in process memory, so a serverless/
-//    edge deployment that spins up separate instances (this app is deployed
-//    on Vercel) would each track their own counts and let the real per-IP
-//    limit multiply across instances.
+// 1. In-memory (always available, no setup) — correct for local dev only.
+//    Counts live in the isolate's own memory, so Cloudflare Workers'
+//    many concurrent, memory-isolated instances would each track their own
+//    counts and let the real per-key limit multiply across instances -
+//    confirmed in production: a resend-OTP cooldown was bypassed under
+//    light concurrent load specifically because of this.
 // 2. Upstash Redis (opt-in, cross-instance-correct) — activates
 //    automatically once UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN
-//    are set. This is the one that's actually correct on Vercel.
+//    are set. This is the one that's actually correct on Cloudflare Workers.
 //
 // Nothing regresses if Upstash isn't configured: every call falls back to
 // the in-memory limiter rather than no-op'ing rate limiting entirely, so
-// routes stay at least as protected as before this file existed. Only the
-// Upstash-specific upgrade no-ops (falls back, with a one-time warning) if
-// its env vars are absent.
+// routes stay at least as protected as before this file existed - but that
+// fallback is only actually correct in local dev. In production it's a real
+// gap, so the warning below is loud and unmissable specifically when
+// NODE_ENV is "production", rather than firing routinely during normal
+// `vinext dev` usage.
 
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
@@ -100,10 +103,20 @@ export async function rateLimit(key: string, maxRequests: number, windowMs: numb
   if (!isUpstashConfigured()) {
     if (!hasWarnedUpstashUnavailable) {
       hasWarnedUpstashUnavailable = true;
-      console.warn(
-        "[rate-limit] UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN not set — using single-instance in-memory rate limiting. " +
-          "Set both to get correct limits across multiple server instances (e.g. on Vercel).",
-      );
+      if (process.env.NODE_ENV === "production") {
+        console.error(
+          "[rate-limit] PRODUCTION MISCONFIGURATION: UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN are not set. " +
+            "Falling back to single-instance in-memory rate limiting, which is NOT correct across Cloudflare Workers' " +
+            "many concurrent isolates - limits (including the OTP resend cooldown) can be bypassed under concurrent " +
+            "requests. Run `wrangler secret put UPSTASH_REDIS_REST_URL` and `wrangler secret put UPSTASH_REDIS_REST_TOKEN` " +
+            "to fix this. This warning logs once per isolate, not once per request.",
+        );
+      } else {
+        console.warn(
+          "[rate-limit] UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN not set — using single-instance in-memory rate " +
+            "limiting. Expected and fine for local dev; must be set before relying on rate limits in production.",
+        );
+      }
     }
     return checkRateLimit(key, maxRequests, windowMs);
   }
@@ -130,9 +143,14 @@ let hasWarnedMissingIpHeader = false;
 // would silently merge every visitor into one shared bucket and let a
 // handful of requests lock out the whole site. Blocking real users because a
 // proxy header is missing is worse than temporarily having no per-IP limit
-// for that edge case. Revisit once the hosting platform (Vercel or
-// otherwise) is confirmed to reliably inject x-forwarded-for/x-real-ip in
-// production, at which point this fallback should no longer trigger.
+// for that edge case.
+//
+// NOTE: on Cloudflare Workers the trustworthy header is CF-Connecting-IP,
+// set by Cloudflare's edge itself. X-Forwarded-For as read here is whatever
+// the client sent - Cloudflare doesn't strip or overwrite it - so a caller
+// can currently set an arbitrary value and reset their own rate-limit
+// bucket on every request. Flagging this rather than changing the trust
+// model here, since it's a behavior change beyond what was asked.
 export function getClientIp(request: Request): string | null {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
