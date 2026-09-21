@@ -314,6 +314,7 @@ export default function CustomerForm({
 
   return (
     <section
+      data-testid="checkout-form"
       className="
         rounded-[2rem]
         bg-white

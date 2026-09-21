@@ -196,6 +196,7 @@ export default function StickerEditorShell({
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    aria-label="Minimize panel"
                     onClick={() => setSheetExpanded(false)}
                     className="flex size-9 items-center justify-center rounded-full bg-black/5"
                   >
@@ -204,6 +205,7 @@ export default function StickerEditorShell({
 
                   <button
                     type="button"
+                    aria-label="Close panel and deselect"
                     onClick={() => {
                       setSheetExpanded(false);
                       onClearSelection();

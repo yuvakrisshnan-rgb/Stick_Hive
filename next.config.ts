@@ -31,6 +31,13 @@ import type { NextConfig } from "next";
 //   creates itself, a separate CSP directive from script-src's blob:).
 //   connect-src also needs data: — the sticker editor converts its
 //   canvas-rendered artwork to a Blob via fetch(dataUrl) before uploading.
+//   api.postalpincode.in: the checkout form's PIN-code lookup
+//   (src/lib/address-validation.ts) calls this directly from the browser
+//   to auto-fill city/state - without it here the fetch is silently
+//   CSP-blocked and lookupPincode()'s catch block reports a generic
+//   "check your connection" error instead of ever reaching the real
+//   valid/invalid response, so the PIN field never autofills for anyone.
+//   Found via the Playwright suite (cart-checkout.spec.ts's PIN tests).
 // - frame-src/script-src include Razorpay's checkout domain for its JS
 //   Checkout widget (order-success page).
 //
@@ -57,7 +64,7 @@ const CSP = [
   `style-src 'self' 'unsafe-inline'`,
   `font-src 'self'`,
   `img-src 'self' data: blob: https:`,
-  `connect-src 'self' blob: data: ${S3_CONNECT_SRC} https://api.razorpay.com https://lumberjack.razorpay.com https://staticimgly.com`,
+  `connect-src 'self' blob: data: ${S3_CONNECT_SRC} https://api.razorpay.com https://lumberjack.razorpay.com https://staticimgly.com https://api.postalpincode.in`,
   `frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com`,
 ].join("; ");
 

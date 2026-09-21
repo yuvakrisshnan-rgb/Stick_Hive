@@ -26,8 +26,8 @@ import {
 } from "next/navigation"
 
 import {
-  PRODUCTS,
   type Category,
+  type Product,
   type StickerSize,
 } from "@/lib/product-data"
 
@@ -55,16 +55,12 @@ type SortOption =
 // FILTER DATA
 // ============================================================================
 
-// The Category union also includes 6 categories from the real
-// sticker-intake catalogue (Bollywood, BTS, flower stickers, Meme
-// stickers, Rick and Morty, Stickers with dialogues - see
-// product-data.ts). Deliberately NOT added here yet: this filter list
-// drives real UI on the live shop, and none of those 6 have any products
-// in PRODUCTS (the live catalogue is still the static array; that data
-// only exists in D1 so far). Adding them now would show a filter button
-// that always returns zero results. Add each one here once its products
-// actually exist in whatever the live catalogue's data source is at
-// that point.
+// The live shop now reads from D1's products table (see
+// backend/products/service.ts), so the 6 real sticker-intake categories
+// (Bollywood, BTS, flower stickers, Meme stickers, Rick and Morty,
+// Stickers with dialogues) have real products behind them and are
+// included below - this filter list previously excluded them on purpose
+// while the catalogue was still the static array.
 const CATEGORIES: Category[] = [
   "Anime",
   "Marvel",
@@ -79,6 +75,12 @@ const CATEGORIES: Category[] = [
   "Technology",
   "Sports",
   "Custom",
+  "Bollywood",
+  "BTS",
+  "flower stickers",
+  "Meme stickers",
+  "Rick and Morty",
+  "Stickers with dialogues",
 ]
 
 
@@ -124,7 +126,11 @@ const SORT_OPTIONS: {
 // SHOP CATALOG
 // ============================================================================
 
-export default function ShopCatalog() {
+export default function ShopCatalog({
+  products,
+}: {
+  products: Product[]
+}) {
 
   const router = useRouter()
 
@@ -205,7 +211,7 @@ export default function ShopCatalog() {
 
 
     let result =
-      PRODUCTS.filter((product) => {
+      products.filter((product) => {
 
         // ----------------------------------------------------------------------
         // SEARCH
@@ -378,6 +384,7 @@ export default function ShopCatalog() {
     return result
 
   }, [
+    products,
     search,
     category,
     size,
@@ -1718,7 +1725,7 @@ function EmptyResults({
 // ============================================================================
 
 function getStartingPrice(
-  product: (typeof PRODUCTS)[number],
+  product: Product,
 ) {
 
   const prices =

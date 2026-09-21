@@ -651,26 +651,40 @@ function CartItem({
         <div
           className="
             relative
+            flex
             size-24
             shrink-0
+            items-center
+            justify-center
             overflow-hidden
             rounded-2xl
             bg-cream
           "
         >
 
-          <Image
-            src={
-              line.product.image ??
-              "/placeholder-sticker.png"
-            }
-            alt={line.product.name}
-            fill
-            sizes="96px"
-            className="
-              object-cover
-            "
-          />
+          {line.product.image ? (
+
+            <Image
+              src={line.product.image}
+              alt={line.product.name}
+              fill
+              sizes="96px"
+              className="
+                object-cover
+              "
+            />
+
+          ) : (
+
+            // No image (see backend/products/service.ts and
+            // product-data.ts) - fall back to the product's own emoji
+            // rather than a placeholder path that itself doesn't exist,
+            // matching StickerImage's convention elsewhere in the shop.
+            <span className="text-4xl">
+              {line.product.emoji ?? "🐝"}
+            </span>
+
+          )}
 
         </div>
 

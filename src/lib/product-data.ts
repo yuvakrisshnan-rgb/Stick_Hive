@@ -294,9 +294,6 @@ export const PRODUCTS: Product[] = [
       "animal",
     ],
 
-    image:
-      "/stickers/cosmic-bee.png",
-
     emoji: "🐝",
 
     color: "#FFD43B",
@@ -354,9 +351,6 @@ export const PRODUCTS: Product[] = [
       "kawaii",
       "noodles",
     ],
-
-    image:
-      "/stickers/ramen-rush.png",
 
     emoji: "🍜",
 
@@ -471,9 +465,6 @@ export const PRODUCTS: Product[] = [
       "earth",
     ],
 
-    image:
-      "/stickers/grow-wild.png",
-
     emoji: "🌱",
 
     color: "#B8F2D0",
@@ -587,9 +578,6 @@ export const PRODUCTS: Product[] = [
       "comic",
     ],
 
-    image:
-      "/stickers/web-hero.png",
-
     emoji: "🕷️",
 
     color: "#FFC8DD",
@@ -647,9 +635,6 @@ export const PRODUCTS: Product[] = [
       "fantasy",
       "warrior",
     ],
-
-    image:
-      "/stickers/cosmic-swordsman.png",
 
     emoji: "⚔️",
 
@@ -709,9 +694,6 @@ export const PRODUCTS: Product[] = [
       "scifi",
     ],
 
-    image:
-      "/stickers/anime-mecha.png",
-
     emoji: "🤖",
 
     color: "#8ED8E8",
@@ -767,9 +749,6 @@ export const PRODUCTS: Product[] = [
       "controller",
       "setup",
     ],
-
-    image:
-      "/stickers/ultimate-gamer.png",
 
     emoji: "🎮",
 
@@ -828,9 +807,6 @@ export const PRODUCTS: Product[] = [
       "comic",
     ],
 
-    image:
-      "/stickers/batman-shadow.png",
-
     emoji: "🦇",
 
     color: "#222222",
@@ -884,9 +860,6 @@ export const PRODUCTS: Product[] = [
       "hero",
       "comic",
     ],
-
-    image:
-      "/stickers/spider-legend.png",
 
     emoji: "🕷️",
 
@@ -945,9 +918,6 @@ export const PRODUCTS: Product[] = [
       "marvel",
     ],
 
-    image:
-      "/stickers/iron-machine.png",
-
     emoji: "🤖",
 
     color: "#FFD166",
@@ -1001,9 +971,6 @@ export const PRODUCTS: Product[] = [
       "dc",
       "power",
     ],
-
-    image:
-      "/stickers/wonder-power.png",
 
     emoji: "⭐",
 
@@ -1059,9 +1026,6 @@ export const PRODUCTS: Product[] = [
       "scifi",
     ],
 
-    image:
-      "/stickers/space-rider.png",
-
     emoji: "🚀",
 
     color: "#023E8A",
@@ -1115,9 +1079,6 @@ export const PRODUCTS: Product[] = [
       "fantasy",
       "aesthetic",
     ],
-
-    image:
-      "/stickers/scarlet-mystic.png",
 
     emoji: "🔮",
 
@@ -1173,9 +1134,6 @@ export const PRODUCTS: Product[] = [
       "cafe",
     ],
 
-    image:
-      "/stickers/coffee-club.png",
-
     emoji: "☕",
 
     color: "#CDB4DB",
@@ -1230,9 +1188,6 @@ export const PRODUCTS: Product[] = [
       "blue",
     ],
 
-    image:
-      "/stickers/ocean-wave.png",
-
     emoji: "🌊",
 
     color: "#90E0EF",
@@ -1286,9 +1241,6 @@ export const PRODUCTS: Product[] = [
       "gaming",
     ],
 
-    image:
-      "/stickers/pixel-world.png",
-
     emoji: "👾",
 
     color: "#8338EC",
@@ -1341,9 +1293,6 @@ export const PRODUCTS: Product[] = [
       "animal",
       "wild",
     ],
-
-    image:
-      "/stickers/tiger-spirit.png",
 
     emoji: "🐯",
 
@@ -1399,9 +1348,6 @@ export const PRODUCTS: Product[] = [
       "animal",
     ],
 
-    image:
-      "/stickers/mystic-cat.png",
-
     emoji: "🐱",
 
     color: "#FFCAD4",
@@ -1455,9 +1401,6 @@ export const PRODUCTS: Product[] = [
       "fire",
       "myth",
     ],
-
-    image:
-      "/stickers/dragon-fire.png",
 
     emoji: "🐉",
 
@@ -1516,9 +1459,6 @@ export const PRODUCTS: Product[] = [
       "technology",
     ],
 
-    image:
-      "/stickers/cyber-hacker.png",
-
     emoji: "💻",
 
     color: "#00B4D8",
@@ -1572,9 +1512,6 @@ export const PRODUCTS: Product[] = [
       "cute",
       "astronaut",
     ],
-
-    image:
-      "/stickers/space-cat.png",
 
     emoji: "🚀",
 
@@ -1630,9 +1567,6 @@ export const PRODUCTS: Product[] = [
       "game",
     ],
 
-    image:
-      "/stickers/football-king.png",
-
     emoji: "⚽",
 
     color: "#90BE6D",
@@ -1686,9 +1620,6 @@ export const PRODUCTS: Product[] = [
       "ball",
       "game",
     ],
-
-    image:
-      "/stickers/basketball-mode.png",
 
     emoji: "🏀",
 
@@ -1744,9 +1675,6 @@ export const PRODUCTS: Product[] = [
       "dream",
     ],
 
-    image:
-      "/stickers/galaxy-dream.png",
-
     emoji: "🌌",
 
     color: "#3A0CA3",
@@ -1800,9 +1728,6 @@ export const PRODUCTS: Product[] = [
       "japan",
       "cute",
     ],
-
-    image:
-      "/stickers/sushi-master.png",
 
     emoji: "🍣",
 
@@ -1858,9 +1783,6 @@ export const PRODUCTS: Product[] = [
       "future",
     ],
 
-    image:
-      "/stickers/neon-city.png",
-
     emoji: "🌃",
 
     color: "#7209B7",
@@ -1914,9 +1836,6 @@ export const PRODUCTS: Product[] = [
       "brand",
       "logo",
     ],
-
-    image:
-      "/stickers/hive-original.png",
 
     emoji: "🐝",
 
