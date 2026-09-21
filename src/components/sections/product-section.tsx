@@ -6,7 +6,13 @@ import { Sparkles } from "lucide-react";
 import TrendingStickers from "@/components/sections/trending-stickers";
 import CategoryShowcase from "@/components/sections/category-showcase";
 
-export default function ProductSection() {
+import type { Product } from "@/lib/product-data";
+
+export default function ProductSection({
+  products,
+}: {
+  products: Product[];
+}) {
   return (
     <section
       id="products"
@@ -144,13 +150,13 @@ export default function ProductSection() {
       {/* TRENDING STICKERS                                                  */}
       {/* ================================================================ */}
 
-      <TrendingStickers />
+      <TrendingStickers products={products} />
 
       {/* ================================================================ */}
       {/* CATEGORY SHOWCASE                                                  */}
       {/* ================================================================ */}
 
-      <CategoryShowcase />
+      <CategoryShowcase products={products} />
     </section>
   );
 }

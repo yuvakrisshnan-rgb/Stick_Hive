@@ -6,7 +6,6 @@ import { motion } from "motion/react";
 import { ArrowUpRight, Plus } from "lucide-react";
 
 import {
-  PRODUCTS,
   priceFor,
   type Product,
 } from "@/lib/product-data";
@@ -97,13 +96,25 @@ function normalizeCategory(
 }
 
 
+// CATEGORY_CONFIG's 4 categories (Anime, Gaming, Marvel & DC, Technology)
+// were curated against the old static array's category set. The real D1
+// catalogue (backend/products/service.ts's category values, sourced from
+// the sticker-intake CSV) only actually has "Anime" among these four -
+// Gaming/Marvel & DC/Technology have zero matches against D1 today, so
+// those three scenes always fall through to CategoryScene's own
+// fallbackProducts slice below. That's the existing fallback behavior for
+// any category with too few real matches, not a new failure mode - which
+// specific categories hit it just changed with the data source. Re-picking
+// CATEGORY_CONFIG's 4 categories against what D1 actually has is a content/
+// curation decision, not a data-wiring one - out of scope here.
 function getCategoryProducts(
+  products: Product[],
   categoryName: string,
 ) {
   const normalizedTarget =
     normalizeCategory(categoryName);
 
-  return PRODUCTS.filter(
+  return products.filter(
     (product) =>
       normalizeCategory(
         product.category,
@@ -116,7 +127,11 @@ function getCategoryProducts(
 // MAIN COMPONENT
 // ============================================================================
 
-export default function CategoryShowcase() {
+export default function CategoryShowcase({
+  products,
+}: {
+  products: Product[];
+}) {
 
   const sectionRef =
     useRef<HTMLElement | null>(null);
@@ -354,6 +369,9 @@ export default function CategoryShowcase() {
                 activeCategory ===
                 index
               }
+              allProducts={
+                products
+              }
             />
 
           ),
@@ -375,6 +393,7 @@ type CategorySceneProps = {
   category: (typeof CATEGORY_CONFIG)[number];
   index: number;
   active: boolean;
+  allProducts: Product[];
 };
 
 
@@ -382,26 +401,28 @@ function CategoryScene({
   category,
   index,
   active,
+  allProducts,
 }: CategorySceneProps) {
 
   const products =
     useMemo(
       () =>
         getCategoryProducts(
+          allProducts,
           category.name,
         ).slice(0, 3),
-      [category.name],
+      [allProducts, category.name],
     );
 
 
   const fallbackProducts =
     useMemo(
       () =>
-        PRODUCTS.slice(
+        allProducts.slice(
           index * 3,
           index * 3 + 3,
         ),
-      [index],
+      [allProducts, index],
     );
 
 

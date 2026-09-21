@@ -11,22 +11,26 @@ import BackgroundEffects from "@/components/animations/background-effects";
 
 import PremiumButton from "@/components/ui/premium-button";
 
-import { PRODUCTS } from "@/lib/product-data";
+import type { Product } from "@/lib/product-data";
 
 import { StickerImage } from "@/components/shop/sticker-image";
 
 
-// ============================================================================
-// COLLAGE PRODUCTS — pick 4 real products to feature, scattered like
-// stickers on a desk rather than a single generic placeholder shape
-// ============================================================================
+export default function Hero({
+  products,
+}: {
+  products: Product[];
+}) {
 
-const COLLAGE_PRODUCTS = PRODUCTS.filter(
-  (product) => product.inStock,
-).slice(0, 4);
+  // ==========================================================================
+  // COLLAGE PRODUCTS — pick 4 real products to feature, scattered like
+  // stickers on a desk rather than a single generic placeholder shape
+  // ==========================================================================
 
+  const COLLAGE_PRODUCTS = products.filter(
+    (product) => product.inStock,
+  ).slice(0, 4);
 
-export default function Hero() {
   const shouldReduceMotion = useReducedMotion();
 
   const sectionRef = useRef<HTMLElement | null>(null);

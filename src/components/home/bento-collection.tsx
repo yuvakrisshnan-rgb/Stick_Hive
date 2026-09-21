@@ -1,11 +1,19 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 
-import { PRODUCTS } from "@/lib/product-data";
+import type { Product } from "@/lib/product-data";
 
-const cards = PRODUCTS.filter((product) => product.inStock).slice(0, 4);
+// Not currently rendered anywhere in the app (confirmed via grep - no
+// import of this component exists outside this file) - updated for
+// consistency with the other home-page sections rather than left on the
+// static array, but has no visible effect today either way.
+export default function BentoCollection({
+  products,
+}: {
+  products: Product[];
+}) {
+  const cards = products.filter((product) => product.inStock).slice(0, 4);
 
-export default function BentoCollection() {
   return (
     <section className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
       <div className="grid grid-flow-dense auto-rows-[180px] grid-cols-2 gap-4 md:auto-rows-[220px] md:grid-cols-4">

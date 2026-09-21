@@ -13,7 +13,6 @@ import { motion, useInView } from "motion/react";
 import { Plus } from "lucide-react";
 
 import {
-  PRODUCTS,
   priceFor,
   type Product,
 } from "@/lib/product-data";
@@ -42,8 +41,16 @@ const AUTO_SCROLL_SPEED = 0.75;
 /* GET TRENDING PRODUCTS                                                     */
 /* ========================================================================= */
 
-function getTrendingProducts(): Product[] {
-  const trendingProducts = PRODUCTS.filter(
+// D1 products (backend/products/service.ts's toProduct()) always carry
+// labels: [] - there's no "trending" concept in the products table, so
+// this label match can only ever succeed against the static array. For
+// D1 data this always falls through to the fallback branch below (first
+// TRENDING_COUNT in-stock products) - the same thing that already
+// happened for the static array whenever fewer than TRENDING_COUNT
+// products were hand-labeled "trending". Preserved as-is rather than
+// invented a new D1 notion of "trending" that doesn't exist in the schema.
+function getTrendingProducts(products: Product[]): Product[] {
+  const trendingProducts = products.filter(
     (product) => {
       const labels = product.labels ?? [];
 
@@ -67,7 +74,7 @@ function getTrendingProducts(): Product[] {
     );
   }
 
-  return PRODUCTS
+  return products
     .filter(
       (product) =>
         product.inStock,
@@ -83,7 +90,11 @@ function getTrendingProducts(): Product[] {
 /* MAIN COMPONENT                                                            */
 /* ========================================================================= */
 
-export default function TrendingStickers() {
+export default function TrendingStickers({
+  products: allProducts,
+}: {
+  products: Product[];
+}) {
 
   const {
     addToCart,
@@ -97,8 +108,8 @@ export default function TrendingStickers() {
 
   const products = useMemo(
     () =>
-      getTrendingProducts(),
-    [],
+      getTrendingProducts(allProducts),
+    [allProducts],
   );
 
 
