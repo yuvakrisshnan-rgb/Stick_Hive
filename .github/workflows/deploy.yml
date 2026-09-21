@@ -1,0 +1,44 @@
+name: Deploy to Cloudflare Workers
+
+# Yuva---Dev only - Cloudflare is the single deployment target now (Vercel
+# dropped). vishal-dev and main must never trigger a deploy; local
+# `dev:vinext` never deploys anything on its own either. Push is the only
+# thing that starts this - no schedule, no workflow_dispatch, so there's no
+# accidental "run it against whatever's checked out" path.
+on:
+  push:
+    branches:
+      - Yuva---Dev
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    # One job, sequential steps: the build step is the gate. If it fails,
+    # the job stops there by default (GitHub Actions skips every later step
+    # once one fails, unless that step sets continue-on-error/if: always() -
+    # neither is used here) - the deploy step is never reached.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (production gate)
+        run: npm run build:vinext
+
+      # D1 migrations are deliberately NOT run here - see AGENTS.md/
+      # DEPLOY_CHECKLIST.md. `wrangler d1 migrations apply --remote` stays
+      # a manual command Yuva runs himself; a push must never auto-apply a
+      # schema change.
+      - name: Deploy to Cloudflare Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy:vinext
