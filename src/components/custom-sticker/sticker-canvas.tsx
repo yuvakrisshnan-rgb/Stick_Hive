@@ -61,7 +61,14 @@ type StickerCanvasProps = {
   stageRef: React.RefObject<Konva.Stage | null>;
   showGuides: boolean;
   zoom: number;
+  /** Sticker-wide outline color around the overall die-cut shape (Task 4)
+   *  - null means no border. Unlike the dashed cut-line guide below, this
+   *  is NOT gated by showGuides: it's part of the actual sticker, so it
+   *  must still render during thumbnail/print export. */
+  borderColor: string | null;
 };
+
+const STICKER_BORDER_WIDTH = 10;
 
 // ============================================================================
 // HTML IMAGE LOADER HOOK
@@ -277,7 +284,7 @@ function ImageLayerNode({
       width={layer.width}
       height={layer.height}
       rotation={layer.rotation}
-      draggable
+      draggable={!layer.locked}
       onClick={onSelect}
       onTap={onSelect}
       onDragMove={(event) => {
@@ -428,7 +435,7 @@ function TextLayerNode({
       fillAfterStrokeEnabled
       fontStyle={layer.fontWeight === "bold" ? "bold" : "normal"}
       align={layer.align}
-      draggable
+      draggable={!layer.locked}
       onClick={onSelect}
       onTap={onSelect}
       onDragMove={(event) => {
@@ -550,6 +557,7 @@ export default function StickerCanvas({
   stageRef,
   showGuides,
   zoom,
+  borderColor,
 }: StickerCanvasProps) {
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const nodeRefs = useRef<Record<string, Konva.Node>>({});
@@ -579,13 +587,13 @@ export default function StickerCanvas({
     }
 
     const node =
-      selectedLayerId && showGuides
+      selectedLayerId && showGuides && !selectedLayer?.locked
         ? nodeRefs.current[selectedLayerId]
         : null;
 
     transformer.nodes(node ? [node] : []);
     transformer.getLayer()?.batchDraw();
-  }, [selectedLayerId, layers, showGuides]);
+  }, [selectedLayerId, layers, showGuides, selectedLayer?.locked]);
 
   // --------------------------------------------------------------------------
   // KEYBOARD NUDGE (arrow keys move selected layer, Shift = larger step)
@@ -593,7 +601,7 @@ export default function StickerCanvas({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!selectedLayer) {
+      if (!selectedLayer || selectedLayer.locked) {
         return;
       }
 
@@ -780,6 +788,54 @@ export default function StickerCanvas({
                   listening={false}
                 />
               ))}
+
+            {/* ================================================================
+                STICKER OUTLINE / BORDER COLOR (Task 4) — always rendered
+                (not gated by showGuides), since it's part of the actual
+                sticker artwork, not an editing aid. Reuses the exact same
+                boundary geometry as the dashed cut-line guide just below
+                for each shape, just solid instead of dashed and drawn
+                slightly outside the print area so it reads as the
+                sticker's own edge rather than a line sitting on the
+                artwork.
+            ================================================================ */}
+
+            {borderColor && shape === "Circle" && (
+              <Line
+                points={buildCirclePoints(
+                  STAGE_SIZE / 2,
+                  STAGE_SIZE / 2,
+                  PRINT_AREA_SIZE / 2 - 10 + STICKER_BORDER_WIDTH / 2,
+                )}
+                closed
+                stroke={borderColor}
+                strokeWidth={STICKER_BORDER_WIDTH}
+                listening={false}
+              />
+            )}
+
+            {borderColor && (shape === "Square" || shape === "Rounded") && (
+              <Rect
+                x={CANVAS_MARGIN + 10 - STICKER_BORDER_WIDTH / 2}
+                y={CANVAS_MARGIN + 10 - STICKER_BORDER_WIDTH / 2}
+                width={PRINT_AREA_SIZE - 20 + STICKER_BORDER_WIDTH}
+                height={PRINT_AREA_SIZE - 20 + STICKER_BORDER_WIDTH}
+                cornerRadius={shape === "Rounded" ? 48 : 0}
+                stroke={borderColor}
+                strokeWidth={STICKER_BORDER_WIDTH}
+                listening={false}
+              />
+            )}
+
+            {borderColor && shape === "Die-cut" && whiteBackingPoints && (
+              <Line
+                points={flattenPoints(whiteBackingPoints)}
+                closed
+                stroke={borderColor}
+                strokeWidth={STICKER_BORDER_WIDTH}
+                listening={false}
+              />
+            )}
 
             {/* ================================================================
                 CUT-LINE GUIDE (hidden during thumbnail export)

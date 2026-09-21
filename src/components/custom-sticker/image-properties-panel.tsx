@@ -1,8 +1,10 @@
 "use client";
 
-import { ImageIcon, RefreshCw, RotateCcw, WandSparkles } from "lucide-react";
+import { useState } from "react";
+import { Eraser, ImageIcon, RefreshCw, RotateCcw, WandSparkles } from "lucide-react";
 
 import type { StickerImageLayer } from "@/lib/cart/types";
+import ImageEraserModal from "./image-eraser-modal";
 
 // ============================================================================
 // PROPS
@@ -17,6 +19,9 @@ type ImagePropertiesPanelProps = {
   isRemovingBackground: boolean;
   onRemoveBackground: () => void;
   onRestoreOriginal: () => void;
+  /** Manual free-hand/shape eraser (Task 5) - an alternative to the AI
+   *  background remover above, not a replacement for it. */
+  onManualErase: (newSrc: string) => void;
 };
 
 // ============================================================================
@@ -32,7 +37,10 @@ export default function ImagePropertiesPanel({
   isRemovingBackground,
   onRemoveBackground,
   onRestoreOriginal,
+  onManualErase,
 }: ImagePropertiesPanelProps) {
+  const [eraserOpen, setEraserOpen] = useState(false);
+
   return (
     <section
       className="
@@ -113,7 +121,42 @@ export default function ImagePropertiesPanel({
           <RotateCcw size={14} />
           Reset Rotation
         </button>
+
+        <button
+          type="button"
+          onClick={() => setEraserOpen(true)}
+          className="
+            col-span-2
+            flex
+            items-center
+            justify-center
+            gap-2
+            rounded-xl
+            border
+            border-black/10
+            bg-white
+            py-2.5
+            text-xs
+            font-bold
+            transition
+            hover:bg-cream
+          "
+        >
+          <Eraser size={14} />
+          Manual Erase
+        </button>
       </div>
+
+      {eraserOpen && (
+        <ImageEraserModal
+          imageSrc={layer.src}
+          onApply={(newSrc) => {
+            onManualErase(newSrc);
+            setEraserOpen(false);
+          }}
+          onClose={() => setEraserOpen(false)}
+        />
+      )}
 
       <div className="mt-4 rounded-2xl border border-black/5 bg-cream/60 p-4">
         {isDetectingContour ? (

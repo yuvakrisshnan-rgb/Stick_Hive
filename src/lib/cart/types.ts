@@ -44,6 +44,8 @@ export type StickerImageLayer = {
   originalSrc?: string;
   /** True when the local background-removal pass has been applied. */
   backgroundRemoved?: boolean;
+  /** True when this layer is locked against drag/resize/rotate/delete. */
+  locked?: boolean;
 };
 
 export type StickerTextLayer = {
@@ -64,6 +66,9 @@ export type StickerTextLayer = {
   // sticker-text look. Null/0 means no stroke.
   strokeColor: string | null;
   strokeWidth: number;
+
+  /** True when this layer is locked against drag/resize/rotate/delete. */
+  locked?: boolean;
 };
 
 export type StickerLayer = StickerImageLayer | StickerTextLayer;

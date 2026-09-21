@@ -27,6 +27,7 @@ import {
 
 import { detectImageContour } from "@/lib/custom-sticker/contour";
 import { removeSimpleBackground, removeBackgroundML, cleanupBackgroundHoles } from "@/lib/custom-sticker/background-removal";
+import { flipImageHorizontal } from "@/lib/custom-sticker/image-transform";
 import { DEFAULT_STICKER_FONT } from "@/lib/custom-sticker/fonts";
 
 import {
@@ -285,6 +286,38 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   }
 
   // --------------------------------------------------------------------------
+  // ADD EMOJI LAYER (Task 3)
+  // --------------------------------------------------------------------------
+  // Reuses the text-layer type rather than inventing a separate "emoji"
+  // layer kind - an emoji is just a string Konva's Text node already
+  // renders (every OS ships an emoji font), so this gets drag/resize/
+  // rotate/flip*/lock/duplicate for free from the same code every text
+  // layer already goes through instead of a second, parallel element type.
+  // (*flip only actually applies to image layers - see canvas-toolbar.tsx.)
+
+  function handleAddEmoji(emoji: string) {
+    const newLayer: StickerTextLayer = {
+      id: createId(),
+      type: "text",
+      text: emoji,
+      x: CANVAS_MARGIN + PRINT_AREA_SIZE / 2 - 40,
+      y: CANVAS_MARGIN + PRINT_AREA_SIZE / 2 - 40,
+      width: 80,
+      rotation: 0,
+      fontFamily: DEFAULT_STICKER_FONT.fontFamily,
+      fontSize: 64,
+      fill: "#111111",
+      fontWeight: "normal",
+      align: "center",
+      strokeColor: null,
+      strokeWidth: 0,
+    };
+
+    applyLayers((previous) => [...previous, newLayer], true);
+    setSelectedLayerId(newLayer.id);
+  }
+
+  // --------------------------------------------------------------------------
   // ADD / REPLACE IMAGE LAYER
   // --------------------------------------------------------------------------
 
@@ -522,6 +555,28 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // MANUAL ERASE (Task 5) — the free-hand/shape eraser in
+  // image-eraser-modal.tsx hands back a new data URL for the already-
+  // displayed image; this just applies it the same way handleFileSelected's
+  // "replace" mode does (update src, clear the stale contour, re-detect a
+  // new one against the newly-erased silhouette).
+  // --------------------------------------------------------------------------
+
+  function handleManualErase(layerId: string, newSrc: string) {
+    applyLayers(
+      (previous) =>
+        previous.map((candidate) =>
+          candidate.id === layerId && candidate.type === "image"
+            ? { ...candidate, src: newSrc, contourPoints: null }
+            : candidate,
+        ),
+      true,
+    );
+
+    detectContourForLayer(layerId, newSrc);
+  }
+
   function handleRestoreOriginal(layerId: string) {
     const layer = layersRef.current.find(
       (candidate): candidate is StickerImageLayer =>
@@ -622,7 +677,8 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   }
 
   function handleDeleteSelected() {
-    if (selectedLayerId) {
+    const layer = layersRef.current.find((l) => l.id === selectedLayerId);
+    if (selectedLayerId && !layer?.locked) {
       deleteLayer(selectedLayerId);
     }
   }
@@ -632,6 +688,79 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
       duplicateLayer(selectedLayerId);
     }
   }
+
+  // --------------------------------------------------------------------------
+  // FLIP (image layers only — see lib/custom-sticker/image-transform.ts for
+  // why this bakes the mirror into the bitmap rather than a live Konva
+  // scaleX transform)
+  // --------------------------------------------------------------------------
+
+  async function handleFlipSelected() {
+    const layer = layersRef.current.find(
+      (candidate): candidate is StickerImageLayer =>
+        candidate.id === selectedLayerId && candidate.type === "image",
+    );
+
+    if (!layer || layer.locked) {
+      return;
+    }
+
+    const flippedSrc = await flipImageHorizontal(layer.src);
+    const flippedOriginalSrc = layer.originalSrc
+      ? await flipImageHorizontal(layer.originalSrc)
+      : undefined;
+
+    // The silhouette mirrors too, but the image's own width/height don't
+    // change — reflecting each traced point around the vertical center is
+    // exact and free, versus re-running full contour detection again.
+    const flippedContour = layer.contourPoints
+      ? layer.contourPoints.map((point) => ({
+          x: layer.width - point.x,
+          y: point.y,
+        }))
+      : null;
+
+    applyLayers(
+      (previous) =>
+        previous.map((candidate) =>
+          candidate.id === layer.id && candidate.type === "image"
+            ? {
+                ...candidate,
+                src: flippedSrc,
+                originalSrc: flippedOriginalSrc,
+                contourPoints: flippedContour,
+              }
+            : candidate,
+        ),
+      true,
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // LOCK / UNLOCK
+  // --------------------------------------------------------------------------
+
+  function handleToggleLockSelected() {
+    if (!selectedLayerId) {
+      return;
+    }
+
+    applyLayers(
+      (previous) =>
+        previous.map((candidate) =>
+          candidate.id === selectedLayerId
+            ? { ...candidate, locked: !candidate.locked }
+            : candidate,
+        ),
+      true,
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // STICKER OUTLINE / BORDER COLOR (Task 4)
+  // --------------------------------------------------------------------------
+
+  const [borderColor, setBorderColor] = useState<string | null>(null);
 
   // --------------------------------------------------------------------------
   // THUMBNAIL GENERATION
@@ -824,6 +953,9 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
           onRestoreOriginal={() =>
             handleRestoreOriginal(selectedLayer.id)
           }
+          onManualErase={(newSrc) =>
+            handleManualErase(selectedLayer.id, newSrc)
+          }
         />
       )}
 
@@ -888,15 +1020,22 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
           <CanvasToolbar
             onAddText={handleAddText}
             onAddImageClick={triggerAddImage}
+            onAddEmoji={handleAddEmoji}
             onUndo={undo}
             onRedo={redo}
             canUndo={canUndo}
             canRedo={canRedo}
             onDeleteSelected={handleDeleteSelected}
             onDuplicateSelected={handleDuplicateSelected}
+            onFlipSelected={handleFlipSelected}
+            onToggleLockSelected={handleToggleLockSelected}
             hasSelectedLayer={Boolean(selectedLayer)}
+            selectedLayerType={selectedLayer?.type ?? null}
+            selectedLayerLocked={Boolean(selectedLayer?.locked)}
             zoom={zoom}
             onZoomChange={setZoom}
+            borderColor={borderColor}
+            onBorderColorChange={setBorderColor}
           />
         }
         canvasArea={
@@ -911,6 +1050,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
               stageRef={stageRef}
               showGuides={showGuides}
               zoom={zoom}
+              borderColor={borderColor}
             />
 
             {layers.length === 0 && (
