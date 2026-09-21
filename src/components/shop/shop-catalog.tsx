@@ -55,6 +55,16 @@ type SortOption =
 // FILTER DATA
 // ============================================================================
 
+// The Category union also includes 6 categories from the real
+// sticker-intake catalogue (Bollywood, BTS, flower stickers, Meme
+// stickers, Rick and Morty, Stickers with dialogues - see
+// product-data.ts). Deliberately NOT added here yet: this filter list
+// drives real UI on the live shop, and none of those 6 have any products
+// in PRODUCTS (the live catalogue is still the static array; that data
+// only exists in D1 so far). Adding them now would show a filter button
+// that always returns zero results. Add each one here once its products
+// actually exist in whatever the live catalogue's data source is at
+// that point.
 const CATEGORIES: Category[] = [
   "Anime",
   "Marvel",

@@ -35,6 +35,18 @@ export type Category =
   | "Technology"
   | "Sports"
   | "Custom"
+  // Added for the real sticker-intake catalogue (stickers.csv / D1
+  // products table) - exact folder-derived strings, not renamed or
+  // merged into an existing lookalike value (e.g. "Rick and Morty" stays
+  // its own value rather than folding into "Series") per DECISIONS.md.
+  // "Anime" above already covers that CSV category exactly; these six
+  // are the CSV categories with no existing exact match.
+  | "Bollywood"
+  | "BTS"
+  | "flower stickers"
+  | "Meme stickers"
+  | "Rick and Morty"
+  | "Stickers with dialogues"
 
 
 export type Collection =

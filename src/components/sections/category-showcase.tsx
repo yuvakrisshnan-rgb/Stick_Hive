@@ -18,6 +18,12 @@ import { StickerImage } from "@/components/shop/sticker-image";
 // CATEGORY CONFIGURATION — retinted to StickHive's actual brand palette
 // ============================================================================
 
+// Same note as shop-catalog.tsx's CATEGORIES: the Category union now
+// also includes 6 real-catalogue categories (Bollywood, BTS, flower
+// stickers, Meme stickers, Rick and Morty, Stickers with dialogues), not
+// added to this hand-curated home-page showcase yet - each entry here is
+// bespoke marketing copy/color, and none of those 6 have live products
+// to showcase until the shop is wired to D1.
 const CATEGORY_CONFIG = [
   {
     id: "anime",
