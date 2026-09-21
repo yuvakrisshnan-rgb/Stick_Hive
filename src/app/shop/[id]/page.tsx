@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 
-import { PRODUCTS } from "@/lib/product-data";
+import { getShopProductBySlug, listShopProducts } from "../../../../backend/products/catalog";
 
 import ProductDetails from "@/components/shop/product-details";
 
+// See src/app/shop/page.tsx - same reasoning for force-dynamic.
+export const dynamic = "force-dynamic";
 
 export default async function ProductPage({
   params,
@@ -17,9 +19,10 @@ export default async function ProductPage({
   const { id } = await params;
 
 
-  const product = PRODUCTS.find(
-    (item) => item.id === id
-  );
+  const [product, allProducts] = await Promise.all([
+    getShopProductBySlug(id),
+    listShopProducts(),
+  ]);
 
 
   if (!product) {
@@ -30,6 +33,7 @@ export default async function ProductPage({
   return (
     <ProductDetails
       product={product}
+      allProducts={allProducts}
     />
   );
 

@@ -24,8 +24,10 @@ import RelatedProducts from "@/components/shop/related-products";
 
 export default function ProductDetails({
   product,
+  allProducts,
 }: {
   product: Product;
+  allProducts: Product[];
 }) {
 
   // ==========================================
@@ -988,6 +990,7 @@ export default function ProductDetails({
 
       <RelatedProducts
         product={product}
+        allProducts={allProducts}
       />
 
     </main>

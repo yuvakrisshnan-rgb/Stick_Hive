@@ -11,7 +11,6 @@ import {
 } from "motion/react"
 
 import {
-  PRODUCTS,
   type Product,
 } from "@/lib/product-data"
 
@@ -26,8 +25,10 @@ import {
 
 export default function RelatedProducts({
   product,
+  allProducts,
 }: {
   product: Product
+  allProducts: Product[]
 }) {
 
   // ==========================================================================
@@ -35,7 +36,7 @@ export default function RelatedProducts({
   // ==========================================================================
 
   const relatedProducts =
-    PRODUCTS
+    allProducts
       .filter(
         (candidate) =>
           candidate.id !== product.id,

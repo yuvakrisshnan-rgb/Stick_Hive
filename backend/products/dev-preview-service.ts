@@ -52,7 +52,7 @@ function toPreviewProduct(row: ProductRow): Product {
   };
 }
 
-export async function listDevPreviewProducts(limit = 3): Promise<Product[]> {
+export async function listDevPreviewProducts(limit = 500): Promise<Product[]> {
   const db = getD1();
   const { results } = await db
     .prepare("SELECT slug, name, category, tags, description, price, status, created_at FROM products WHERE status = 'active' ORDER BY created_at DESC LIMIT ?")

@@ -8,7 +8,7 @@ import { ProductCard } from "@/components/products/product-card";
 // proof the seed script + image pipeline work end to end, without
 // touching the live shop's static-array data source at all.
 export default async function DevProductPreviewPage() {
-  const products = await listDevPreviewProducts(3);
+  const products = await listDevPreviewProducts();
 
   return (
     <main className="min-h-screen bg-cream px-6 pb-20 pt-32">
@@ -16,6 +16,7 @@ export default async function DevProductPreviewPage() {
         <h1 className="text-2xl font-extrabold">Dev product preview</h1>
         <p className="mt-2 text-sm text-black/50">
           Dev-only. Renders directly from the local D1 products table via ProductCard - not the live shop&apos;s data source.
+          Showing all {products.length} active product{products.length === 1 ? "" : "s"}.
         </p>
 
         {products.length === 0 ? (
