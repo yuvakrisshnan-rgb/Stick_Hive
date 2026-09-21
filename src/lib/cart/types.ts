@@ -61,6 +61,13 @@ export type StickerTextLayer = {
   fill: string;
   fontWeight: "normal" | "bold";
   align: "left" | "center" | "right";
+  italic?: boolean;
+  underline?: boolean;
+  /** Drop shadow behind the text glyphs, distinct from the outline/stroke. */
+  shadow?: boolean;
+  /** Solid pill-shaped backdrop behind the text (quick-style presets). Null
+   *  means no backdrop. */
+  backgroundColor?: string | null;
 
   // Optional outline/stroke around the text — the classic bold white
   // sticker-text look. Null/0 means no stroke.

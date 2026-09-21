@@ -1,8 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronUp, FolderOpen } from "lucide-react";
-
 // ============================================================================
 // MOCK SAVED DESIGNS
 // ============================================================================
@@ -11,6 +8,13 @@ import { ChevronDown, ChevronUp, FolderOpen } from "lucide-react";
 // GET /api/custom-sticker/designs) returning { id, thumbnailUrl, name,
 // createdAt }[] for the signed-in user. Nothing else in this component
 // should need to change shape-wise.
+//
+// The "Load" action below is a confirmed stub (console.log only, restores
+// nothing into the canvas) — flagged rather than silently left broken per
+// the redesign brief. Actually wiring a saved-design payload into Konva
+// layers is a separate, nontrivial task (out of scope for this pass), so
+// the button is disabled with an honest "Coming soon" label instead of
+// pretending to work.
 
 type SavedDesign = {
   id: string;
@@ -57,69 +61,49 @@ function formatDate(iso: string) {
 // ============================================================================
 
 export default function MyDesignsPanel() {
-  const [expanded, setExpanded] = useState(false);
-
-  function handleLoad(design: SavedDesign) {
-    // Sprint 2 integration point: this should call the same layer-setter
-    // the canvas uses internally (setLayers in sticker-builder.tsx) with the
-    // design's saved layer data, mirroring how editId already restores a
-    // cart line's layers today. Stubbed for this sprint since wiring a full
-    // saved-design payload into Konva layers is nontrivial and out of scope.
-    console.log("Load design into canvas (Sprint 2):", design);
-  }
-
   return (
-    <section className="rounded-3xl border border-black/10 bg-white">
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4"
-      >
-        <span className="flex items-center gap-2 text-sm font-extrabold">
-          <FolderOpen size={16} />
-          My Designs
-        </span>
-        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-      </button>
+    <div className="p-4">
+      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-black/40">
+        My Designs
+      </p>
 
-      {expanded && (
-        <div className="border-t border-black/10 p-4">
-          {MOCK_SAVED_DESIGNS.length === 0 ? (
-            <p className="px-1 py-2 text-xs font-semibold text-black/45">
-              You haven&apos;t saved any designs yet.
-            </p>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {MOCK_SAVED_DESIGNS.map((design) => (
-                <div
-                  key={design.id}
-                  className="w-28 shrink-0 rounded-2xl border border-black/10 p-2 text-center"
-                >
-                  <div className="aspect-square overflow-hidden rounded-xl bg-black/[0.03]">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- small mock thumbnail strip, not worth next/image config here */}
-                    <img
-                      src={design.thumbnailUrl}
-                      alt={design.name}
-                      className="h-full w-full object-contain"
-                    />
-                  </div>
+      {MOCK_SAVED_DESIGNS.length === 0 ? (
+        <p className="mt-3 px-1 py-2 text-xs font-semibold text-black/45">
+          You haven&apos;t saved any designs yet.
+        </p>
+      ) : (
+        <div className="mt-3 flex max-h-72 flex-col gap-2 overflow-y-auto">
+          {MOCK_SAVED_DESIGNS.map((design) => (
+            <div
+              key={design.id}
+              className="flex items-center gap-3 rounded-2xl border border-black/10 p-2"
+            >
+              <div className="size-12 shrink-0 overflow-hidden rounded-xl bg-black/[0.03]">
+                {/* eslint-disable-next-line @next/next/no-img-element -- small mock thumbnail strip, not worth next/image config here */}
+                <img
+                  src={design.thumbnailUrl}
+                  alt={design.name}
+                  className="h-full w-full object-contain"
+                />
+              </div>
 
-                  <p className="mt-2 truncate text-xs font-bold">{design.name}</p>
-                  <p className="text-[10px] text-black/40">{formatDate(design.createdAt)}</p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold">{design.name}</p>
+                <p className="text-[10px] text-black/40">{formatDate(design.createdAt)}</p>
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleLoad(design)}
-                    className="mt-2 w-full rounded-full bg-black px-2 py-1.5 text-[11px] font-bold text-white transition hover:scale-[1.02]"
-                  >
-                    Load
-                  </button>
-                </div>
-              ))}
+              <button
+                type="button"
+                disabled
+                title="Loading saved designs into the canvas isn't wired up yet"
+                className="shrink-0 rounded-full bg-black/10 px-3 py-1.5 text-[11px] font-bold text-black/40"
+              >
+                Coming soon
+              </button>
             </div>
-          )}
+          ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }

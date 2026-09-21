@@ -28,6 +28,12 @@ import type {
 
 import type { ContourPoint } from "@/lib/custom-sticker/contour";
 
+import SelectionToolbar from "./selection-toolbar";
+import TextStylePanel from "./text-style-panel";
+import ImageStylePanel from "./image-style-panel";
+import ShortcutsPopover from "./shortcuts-popover";
+import ZoomGridPill from "./zoom-grid-pill";
+
 // ============================================================================
 // CANVAS CONSTANTS
 // ============================================================================
@@ -61,14 +67,39 @@ type StickerCanvasProps = {
   stageRef: React.RefObject<Konva.Stage | null>;
   showGuides: boolean;
   zoom: number;
+  onZoomChange: (zoom: number) => void;
   /** Sticker-wide outline color around the overall die-cut shape (Task 4)
    *  - null means no border. Unlike the dashed cut-line guide below, this
    *  is NOT gated by showGuides: it's part of the actual sticker, so it
    *  must still render during thumbnail/print export. */
   borderColor: string | null;
+  borderWidth: number;
+  canvasBackgroundColor: string;
+  /** Visibility of the dashed cut-line guide + "die-cut ready" hint only.
+   *  Deliberately separate from showGuides, which also gates the
+   *  Transformer/snap-guides and is toggled off during thumbnail export —
+   *  a user-facing "grid" toggle must never disable the ability to
+   *  transform the selected element. */
+  showCutGuide: boolean;
+  onToggleShowCutGuide: () => void;
+  // Floating per-selection pill toolbar (Task 1/6) — action handlers own by
+  // sticker-builder.tsx, rendered here since this component already owns
+  // the node refs needed to position the pill next to the selected element.
+  onDuplicateSelected: () => void;
+  onFlipSelected: () => void;
+  onDeleteSelected: () => void;
+  onToggleLockSelected: () => void;
+  onOpenEraser: () => void;
+  // Floating Image Settings panel (top-right, image layers only — see
+  // sticker-canvas.tsx's report note: not explicitly in the approved
+  // mockup, added to avoid regressing Replace/Reset Rotation/Make Die-cut
+  // Ready/Restore Original, which have no other home in the new layout).
+  onReplaceClick: () => void;
+  onRemoveBackground: () => void;
+  onRestoreOriginal: () => void;
+  isDetectingContour: boolean;
+  isRemovingBackground: boolean;
 };
-
-const STICKER_BORDER_WIDTH = 10;
 
 // ============================================================================
 // HTML IMAGE LOADER HOOK
@@ -415,9 +446,38 @@ function TextLayerNode({
   onDragGuides: (guides: SnapLines | null) => void;
 }) {
   const shapeRef = useRef<Konva.Text | null>(null);
+  const [measuredHeight, setMeasuredHeight] = useState(layer.fontSize * 1.2);
+
+  useEffect(() => {
+    const node = shapeRef.current;
+    if (node) {
+      setMeasuredHeight(node.height());
+    }
+  }, [layer.text, layer.width, layer.fontSize, layer.fontFamily]);
+
+  const fontStyle = [
+    layer.fontWeight === "bold" ? "bold" : "",
+    layer.italic ? "italic" : "",
+  ]
+    .filter(Boolean)
+    .join(" ") || "normal";
 
   return (
-    <KonvaText
+    <>
+      {layer.backgroundColor && (
+        <Rect
+          x={layer.x}
+          y={layer.y}
+          width={layer.width}
+          height={measuredHeight}
+          rotation={layer.rotation}
+          fill={layer.backgroundColor}
+          cornerRadius={measuredHeight / 2}
+          listening={false}
+        />
+      )}
+
+      <KonvaText
       ref={(node) => {
         shapeRef.current = node;
         registerRef(layer.id, node);
@@ -433,7 +493,13 @@ function TextLayerNode({
       stroke={layer.strokeColor ?? undefined}
       strokeWidth={layer.strokeWidth ?? 0}
       fillAfterStrokeEnabled
-      fontStyle={layer.fontWeight === "bold" ? "bold" : "normal"}
+      fontStyle={fontStyle}
+      textDecoration={layer.underline ? "underline" : ""}
+      shadowColor={layer.shadow ? "#000000" : undefined}
+      shadowBlur={layer.shadow ? 8 : 0}
+      shadowOffsetX={layer.shadow ? 2 : 0}
+      shadowOffsetY={layer.shadow ? 3 : 0}
+      shadowOpacity={layer.shadow ? 0.45 : 0}
       align={layer.align}
       draggable={!layer.locked}
       onClick={onSelect}
@@ -539,7 +605,8 @@ function TextLayerNode({
 
         onCommitHistory();
       }}
-    />
+      />
+    </>
   );
 }
 
@@ -557,11 +624,32 @@ export default function StickerCanvas({
   stageRef,
   showGuides,
   zoom,
+  onZoomChange,
   borderColor,
+  borderWidth,
+  canvasBackgroundColor,
+  showCutGuide,
+  onToggleShowCutGuide,
+  onDuplicateSelected,
+  onFlipSelected,
+  onDeleteSelected,
+  onToggleLockSelected,
+  onOpenEraser,
+  onReplaceClick,
+  onRemoveBackground,
+  onRestoreOriginal,
+  isDetectingContour,
+  isRemovingBackground,
 }: StickerCanvasProps) {
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const nodeRefs = useRef<Record<string, Konva.Node>>({});
   const [dragGuides, setDragGuides] = useState<SnapLines | null>(null);
+  const [selectionRect, setSelectionRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   function registerRef(id: string, node: Konva.Node | null) {
@@ -596,12 +684,49 @@ export default function StickerCanvas({
   }, [selectedLayerId, layers, showGuides, selectedLayer?.locked]);
 
   // --------------------------------------------------------------------------
-  // KEYBOARD NUDGE (arrow keys move selected layer, Shift = larger step)
+  // SELECTION SCREEN RECT — positions the floating pill toolbar. Computed in
+  // the Stage's own 0..STAGE_SIZE coordinate space (relativeTo the stage
+  // cancels the stage's own scaleX/scaleY), then scaled by zoom below at
+  // render time — this keeps it in sync with the same zoomed pixel box the
+  // Stage itself renders into, no separate scroll-offset math needed.
+  // --------------------------------------------------------------------------
+
+  useEffect(() => {
+    // Reading a Konva node's rendered bounding box is only possible after
+    // it has committed to the canvas - there is no render-time equivalent,
+    // same as the pre-existing useHtmlImage hook above this component
+    // having to setState from within an effect to sync an <img> load event.
+    if (!selectedLayerId || !showGuides) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectionRect(null);
+      return;
+    }
+
+    const node = nodeRefs.current[selectedLayerId];
+    const stage = stageRef.current;
+
+    if (!node || !stage) {
+      setSelectionRect(null);
+      return;
+    }
+
+    const rect = node.getClientRect({ relativeTo: stage });
+    setSelectionRect({
+      left: rect.x,
+      top: rect.y,
+      width: rect.width,
+      height: rect.height,
+    });
+  }, [selectedLayerId, layers, showGuides, stageRef]);
+
+  // --------------------------------------------------------------------------
+  // KEYBOARD SHORTCUTS — arrow-key nudge, Delete/Backspace, Ctrl/Cmd+D
+  // duplicate (advertised in shortcuts-popover.tsx, so must be real).
   // --------------------------------------------------------------------------
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!selectedLayer || selectedLayer.locked) {
+      if (!selectedLayer) {
         return;
       }
 
@@ -610,6 +735,23 @@ export default function StickerCanvas({
         target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
 
       if (isTypingInField) {
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        onDuplicateSelected();
+        return;
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (selectedLayer.locked) return;
+        event.preventDefault();
+        onDeleteSelected();
+        return;
+      }
+
+      if (selectedLayer.locked) {
         return;
       }
 
@@ -635,7 +777,37 @@ export default function StickerCanvas({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedLayer, onUpdateLayer, onCommitHistory]);
+  }, [
+    selectedLayer,
+    onUpdateLayer,
+    onCommitHistory,
+    onDuplicateSelected,
+    onDeleteSelected,
+  ]);
+
+  // --------------------------------------------------------------------------
+  // ALIGN SELECTED TO CANVAS CENTER — no multi-select exists in this
+  // codebase (confirmed absent), so "Align" in the pill toolbar is scoped to
+  // what's real: centering the single selected element on the print area,
+  // not aligning it relative to other elements.
+  // --------------------------------------------------------------------------
+
+  function handleAlignCenterSelected() {
+    if (!selectedLayer || selectedLayer.locked) return;
+
+    const centerX = CANVAS_MARGIN + PRINT_AREA_SIZE / 2;
+    const centerY = CANVAS_MARGIN + PRINT_AREA_SIZE / 2;
+    const height =
+      selectedLayer.type === "image"
+        ? selectedLayer.height
+        : selectedLayer.fontSize * 1.2;
+
+    onUpdateLayer(selectedLayer.id, {
+      x: centerX - selectedLayer.width / 2,
+      y: centerY - height / 2,
+    });
+    onCommitHistory();
+  }
 
   // --------------------------------------------------------------------------
   // DESELECT ON EMPTY-AREA CLICK
@@ -659,9 +831,10 @@ export default function StickerCanvas({
     : null;
 
   return (
+    <div className="flex flex-wrap items-start justify-center gap-4">
     <div
       ref={wrapperRef}
-      className="mx-auto overflow-auto rounded-[2.5rem] bg-[#e8e8e8]"
+      className="relative mx-auto overflow-auto rounded-[2.5rem] bg-[repeating-conic-gradient(#eeeeee_0%_25%,#f6f6f6_0%_50%)] bg-[length:24px_24px]"
       style={{
         width: "100%",
         maxWidth: STAGE_SIZE,
@@ -669,6 +842,7 @@ export default function StickerCanvas({
       }}
     >
       <div
+        className="relative"
         style={{
           width: STAGE_SIZE * zoom,
           height: STAGE_SIZE * zoom,
@@ -693,7 +867,7 @@ export default function StickerCanvas({
               y={0}
               width={STAGE_SIZE}
               height={STAGE_SIZE}
-              fill="#e8e8e8"
+              fill={canvasBackgroundColor}
               listening={false}
             />
 
@@ -805,24 +979,24 @@ export default function StickerCanvas({
                 points={buildCirclePoints(
                   STAGE_SIZE / 2,
                   STAGE_SIZE / 2,
-                  PRINT_AREA_SIZE / 2 - 10 + STICKER_BORDER_WIDTH / 2,
+                  PRINT_AREA_SIZE / 2 - 10 + borderWidth / 2,
                 )}
                 closed
                 stroke={borderColor}
-                strokeWidth={STICKER_BORDER_WIDTH}
+                strokeWidth={borderWidth}
                 listening={false}
               />
             )}
 
             {borderColor && (shape === "Square" || shape === "Rounded") && (
               <Rect
-                x={CANVAS_MARGIN + 10 - STICKER_BORDER_WIDTH / 2}
-                y={CANVAS_MARGIN + 10 - STICKER_BORDER_WIDTH / 2}
-                width={PRINT_AREA_SIZE - 20 + STICKER_BORDER_WIDTH}
-                height={PRINT_AREA_SIZE - 20 + STICKER_BORDER_WIDTH}
+                x={CANVAS_MARGIN + 10 - borderWidth / 2}
+                y={CANVAS_MARGIN + 10 - borderWidth / 2}
+                width={PRINT_AREA_SIZE - 20 + borderWidth}
+                height={PRINT_AREA_SIZE - 20 + borderWidth}
                 cornerRadius={shape === "Rounded" ? 48 : 0}
                 stroke={borderColor}
-                strokeWidth={STICKER_BORDER_WIDTH}
+                strokeWidth={borderWidth}
                 listening={false}
               />
             )}
@@ -832,16 +1006,18 @@ export default function StickerCanvas({
                 points={flattenPoints(whiteBackingPoints)}
                 closed
                 stroke={borderColor}
-                strokeWidth={STICKER_BORDER_WIDTH}
+                strokeWidth={borderWidth}
                 listening={false}
               />
             )}
 
             {/* ================================================================
-                CUT-LINE GUIDE (hidden during thumbnail export)
+                CUT-LINE GUIDE (hidden during thumbnail export, and hideable
+                via the zoom/grid pill's "grid" toggle — see showCutGuide's
+                doc comment on why that's a separate flag from showGuides)
             ================================================================ */}
 
-            {showGuides && shape === "Circle" && (
+            {showGuides && showCutGuide && shape === "Circle" && (
               <Line
                 points={buildCirclePoints(
                   STAGE_SIZE / 2,
@@ -856,7 +1032,7 @@ export default function StickerCanvas({
               />
             )}
 
-            {showGuides && shape === "Square" && (
+            {showGuides && showCutGuide && shape === "Square" && (
               <Rect
                 x={CANVAS_MARGIN + 10}
                 y={CANVAS_MARGIN + 10}
@@ -869,7 +1045,7 @@ export default function StickerCanvas({
               />
             )}
 
-            {showGuides && shape === "Rounded" && (
+            {showGuides && showCutGuide && shape === "Rounded" && (
               <Rect
                 x={CANVAS_MARGIN + 10}
                 y={CANVAS_MARGIN + 10}
@@ -883,7 +1059,7 @@ export default function StickerCanvas({
               />
             )}
 
-            {showGuides && shape === "Die-cut" && (
+            {showGuides && showCutGuide && shape === "Die-cut" && (
               whiteBackingPoints ? (
                 <Line
                   points={flattenPoints(whiteBackingPoints)}
@@ -950,7 +1126,78 @@ export default function StickerCanvas({
             )}
           </Layer>
         </Stage>
+
+        {/* ==================================================================
+            SELECTION PILL TOOLBAR — lives inside the same zoomed/scrolled
+            box as the Stage so it tracks the artwork exactly; positioned
+            from selectionRect (Stage-space, scaled by zoom here).
+        ================================================================== */}
+
+        {selectedLayer && showGuides && selectionRect && (
+          <SelectionToolbar
+            style={{
+              left: selectionRect.left * zoom + (selectionRect.width * zoom) / 2,
+              top:
+                selectionRect.top * zoom - 52 >= 0
+                  ? selectionRect.top * zoom - 52
+                  : selectionRect.top * zoom + selectionRect.height * zoom + 8,
+              transform: "translateX(-50%)",
+            }}
+            layerType={selectedLayer.type}
+            locked={Boolean(selectedLayer.locked)}
+            onDuplicate={onDuplicateSelected}
+            onFlip={onFlipSelected}
+            onErase={onOpenEraser}
+            onAlignCenter={handleAlignCenterSelected}
+            onToggleLock={onToggleLockSelected}
+            onDelete={onDeleteSelected}
+          />
+        )}
       </div>
+
+      <ShortcutsPopover />
+
+      <ZoomGridPill
+        zoom={zoom}
+        onZoomChange={onZoomChange}
+        showGrid={showCutGuide}
+        onToggleGrid={onToggleShowCutGuide}
+      />
+    </div>
+
+      {/* ====================================================================
+          TEXT/IMAGE STYLE PANEL — a normal flex sibling next to the canvas
+          card (not an absolute overlay on top of it): on a fixed-size
+          500px stage this is the only way to avoid it covering the
+          selection pill toolbar, which tracks the actual selected element
+          and is very often near the canvas center. Wraps below on narrow
+          viewports instead of overflowing.
+      ==================================================================== */}
+
+      {showGuides && selectedLayer?.type === "text" && (
+        <div className="shrink-0">
+          <TextStylePanel
+            layer={selectedLayer}
+            onChange={(updates) => onUpdateLayer(selectedLayer.id, updates)}
+            onCommitHistory={onCommitHistory}
+          />
+        </div>
+      )}
+
+      {showGuides && selectedLayer?.type === "image" && (
+        <div className="shrink-0">
+          <ImageStylePanel
+            layer={selectedLayer}
+            onReplaceClick={onReplaceClick}
+            onChange={(updates) => onUpdateLayer(selectedLayer.id, updates)}
+            onCommitHistory={onCommitHistory}
+            isDetectingContour={isDetectingContour}
+            isRemovingBackground={isRemovingBackground}
+            onRemoveBackground={onRemoveBackground}
+            onRestoreOriginal={onRestoreOriginal}
+          />
+        </div>
+      )}
     </div>
   );
 }

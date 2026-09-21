@@ -49,39 +49,25 @@ export default function LayersPanel({
   const orderedLayers = [...layers].reverse();
 
   return (
-    <section
-      className="
-        rounded-3xl
-        border
-        border-black/5
-        bg-white
-        p-5
-      "
-    >
-      <div>
-        <p
-          className="
-            text-[10px]
-            font-bold
-            uppercase
-            tracking-[0.25em]
-            text-black/40
-          "
-        >
-          Layers
-        </p>
-
-        <h3 className="mt-1 text-lg font-extrabold">
-          Design Elements
-        </h3>
-      </div>
+    <div className="p-4">
+      <p
+        className="
+          text-[10px]
+          font-bold
+          uppercase
+          tracking-[0.25em]
+          text-black/40
+        "
+      >
+        Layers
+      </p>
 
       {orderedLayers.length === 0 ? (
         <p className="mt-4 text-xs font-medium text-black/40">
           No layers yet. Add an image or text to get started.
         </p>
       ) : (
-        <div className="mt-4 flex flex-col gap-2">
+        <div className="mt-4 flex max-h-72 flex-col gap-2 overflow-y-auto">
           {orderedLayers.map((layer, index) => {
             const isSelected = layer.id === selectedLayerId;
             const isTopmost = index === 0;
@@ -206,6 +192,6 @@ export default function LayersPanel({
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }

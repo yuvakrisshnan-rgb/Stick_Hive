@@ -10,14 +10,9 @@ import {
 
 import type Konva from "konva";
 
-import CanvasToolbar from "./canvas-toolbar";
-import LayersPanel from "./layers-panel";
-import TextPropertiesPanel from "./text-properties-panel";
-import ImagePropertiesPanel from "./image-properties-panel";
-import ShapeSelector, { type StickerShape } from "./shape-selector";
-import StickerPriceBar from "./sticker-price-bar";
-import StickerEditorShell from "./sticker-editor-shell";
-import MyDesignsPanel from "./my-designs-panel";
+import EditorTopBar from "./editor-top-bar";
+import RightRail from "./right-rail";
+import ImageEraserModal from "./image-eraser-modal";
 
 import {
   STAGE_SIZE,
@@ -36,12 +31,16 @@ import {
 } from "@/components/shop/store-provider";
 
 import type {
+  CustomStickerShape,
   StickerImageLayer,
   StickerLayer,
   StickerTextLayer,
 } from "@/lib/cart/types";
 
 import type { StickerSize } from "@/lib/product-data";
+
+const DEFAULT_CANVAS_BACKGROUND = "#e8e8e8";
+const DEFAULT_BORDER_WIDTH = 10;
 
 // ============================================================================
 // CANVAS (client-only — Konva needs the browser)
@@ -244,8 +243,8 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   // SHAPE / SIZE / QUANTITY
   // --------------------------------------------------------------------------
 
-  const [shape, setShape] = useState<StickerShape>(
-    (existingSticker?.shape as StickerShape) ?? "Circle",
+  const [shape, setShape] = useState<CustomStickerShape>(
+    existingSticker?.shape ?? "Circle",
   );
 
   const [size] = useState<StickerSize>(
@@ -293,7 +292,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   // renders (every OS ships an emoji font), so this gets drag/resize/
   // rotate/flip*/lock/duplicate for free from the same code every text
   // layer already goes through instead of a second, parallel element type.
-  // (*flip only actually applies to image layers - see canvas-toolbar.tsx.)
+  // (*flip only actually applies to image layers - see selection-toolbar.tsx.)
 
   function handleAddEmoji(emoji: string) {
     const newLayer: StickerTextLayer = {
@@ -761,6 +760,25 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   // --------------------------------------------------------------------------
 
   const [borderColor, setBorderColor] = useState<string | null>(null);
+  const [borderWidth, setBorderWidth] = useState(DEFAULT_BORDER_WIDTH);
+  const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(
+    DEFAULT_CANVAS_BACKGROUND,
+  );
+
+  // --------------------------------------------------------------------------
+  // CUT-LINE GUIDE VISIBILITY (zoom/grid pill's "grid" toggle) — deliberately
+  // separate from showGuides below, which also gates the Transformer and
+  // must stay on so the user can keep resizing/rotating.
+  // --------------------------------------------------------------------------
+
+  const [showCutGuide, setShowCutGuide] = useState(true);
+
+  // --------------------------------------------------------------------------
+  // MANUAL ERASER MODAL — lifted up from image-style-panel.tsx so the
+  // floating per-selection pill toolbar's "Erase" icon can open it directly.
+  // --------------------------------------------------------------------------
+
+  const [eraserOpen, setEraserOpen] = useState(false);
 
   // --------------------------------------------------------------------------
   // THUMBNAIL GENERATION
@@ -916,94 +934,19 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
     layers.find((layer) => layer.id === selectedLayerId) ?? null;
 
   // --------------------------------------------------------------------------
-  // PANEL CONTENT (shared between desktop side panel and mobile sheet)
-  // --------------------------------------------------------------------------
-
-  const panelContent = (
-    <>
-      {selectedLayer?.type === "text" && (
-        <TextPropertiesPanel
-          layer={selectedLayer}
-          onChange={(updates) =>
-            handleUpdateLayer(selectedLayer.id, updates)
-          }
-          onCommitHistory={commitCurrentHistory}
-        />
-      )}
-
-      {selectedLayer?.type === "image" && (
-        <ImagePropertiesPanel
-          layer={selectedLayer}
-          onReplaceClick={() =>
-            triggerReplaceImage(selectedLayer.id)
-          }
-          onChange={(updates) =>
-            handleUpdateLayer(selectedLayer.id, updates)
-          }
-          onCommitHistory={commitCurrentHistory}
-          isDetectingContour={
-            detectingContourLayerId === selectedLayer.id
-          }
-          isRemovingBackground={
-            removingBackgroundLayerId === selectedLayer.id
-          }
-          onRemoveBackground={() =>
-            handleRemoveBackground(selectedLayer.id)
-          }
-          onRestoreOriginal={() =>
-            handleRestoreOriginal(selectedLayer.id)
-          }
-          onManualErase={(newSrc) =>
-            handleManualErase(selectedLayer.id, newSrc)
-          }
-        />
-      )}
-
-      {!selectedLayer && layers.length === 0 && (
-        <section className="rounded-3xl border border-dashed border-black/15 bg-white p-6 text-center">
-          <p className="text-sm font-bold">Start designing</p>
-          <p className="mt-1 text-xs text-black/45">
-            Tap &ldquo;Add Image&rdquo; or &ldquo;Add Text&rdquo; above the
-            canvas to add your first layer.
-          </p>
-        </section>
-      )}
-
-      <LayersPanel
-        layers={layers}
-        selectedLayerId={selectedLayerId}
-        onSelectLayer={setSelectedLayerId}
-        onDeleteLayer={deleteLayer}
-        onMoveLayer={moveLayer}
-      />
-
-      <MyDesignsPanel />
-
-      <ShapeSelector shape={shape} setShape={setShape} />
-
-      <StickerPriceBar
-        unitPrice={unitPrice}
-        quantity={quantity}
-        imageReady={layers.length > 0}
-        addedToCart={added}
-        editMode={isEditMode}
-        onAddToCart={handleAddToCart}
-      />
-    </>
-  );
-
-  const panelTitle = selectedLayer
-    ? selectedLayer.type === "text"
-      ? "Text Settings"
-      : "Image Settings"
-    : "Design Options";
-
-  // --------------------------------------------------------------------------
   // UI
   // --------------------------------------------------------------------------
+  // Top bar + two-zone main row (center canvas, 64px right rail) — no left
+  // sidebar, no tab navigation. Layers/My Designs/Shape/Background are now
+  // rail flyouts (right-rail.tsx); Text/Image settings are floating panels
+  // rendered by sticker-canvas.tsx itself, positioned near the selection.
+  // Retired sticker-editor-shell.tsx's mobile bottom-sheet: that sheet only
+  // ever held this same "always-visible panel" content, which no longer
+  // exists as a persistent panel at any viewport size — flyouts work
+  // identically on mobile and desktop, so there's nothing left to sheet.
 
   return (
-    <main className="mx-auto max-w-7xl px-6 pb-10">
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 pb-6 sm:px-6">
       <input
         ref={fileInputRef}
         type="file"
@@ -1012,69 +955,104 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
         className="hidden"
       />
 
-      <StickerEditorShell
-        panelTitle={panelTitle}
-        hasSelection={Boolean(selectedLayer)}
-        onClearSelection={() => setSelectedLayerId(null)}
-        toolbarArea={
-          <CanvasToolbar
-            onAddText={handleAddText}
-            onAddImageClick={triggerAddImage}
-            onAddEmoji={handleAddEmoji}
-            onUndo={undo}
-            onRedo={redo}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            onDeleteSelected={handleDeleteSelected}
-            onDuplicateSelected={handleDuplicateSelected}
-            onFlipSelected={handleFlipSelected}
-            onToggleLockSelected={handleToggleLockSelected}
-            hasSelectedLayer={Boolean(selectedLayer)}
-            selectedLayerType={selectedLayer?.type ?? null}
-            selectedLayerLocked={Boolean(selectedLayer?.locked)}
+      <EditorTopBar
+        isEditMode={isEditMode}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        unitPrice={unitPrice}
+        imageReady={layers.length > 0}
+        addedToCart={added}
+        onPrimaryAction={handleAddToCart}
+      />
+
+      <div className="flex flex-1 items-start gap-4 py-4 sm:gap-6 sm:py-6">
+        <div className="min-w-0 flex-1">
+          <StickerCanvas
+            layers={layers}
+            selectedLayerId={selectedLayerId}
+            onSelectLayer={setSelectedLayerId}
+            onUpdateLayer={handleUpdateLayer}
+            onCommitHistory={commitCurrentHistory}
+            shape={shape}
+            stageRef={stageRef}
+            showGuides={showGuides}
             zoom={zoom}
             onZoomChange={setZoom}
             borderColor={borderColor}
-            onBorderColorChange={setBorderColor}
+            borderWidth={borderWidth}
+            canvasBackgroundColor={canvasBackgroundColor}
+            showCutGuide={showCutGuide}
+            onToggleShowCutGuide={() => setShowCutGuide((value) => !value)}
+            onDuplicateSelected={handleDuplicateSelected}
+            onFlipSelected={handleFlipSelected}
+            onDeleteSelected={handleDeleteSelected}
+            onToggleLockSelected={handleToggleLockSelected}
+            onOpenEraser={() => setEraserOpen(true)}
+            onReplaceClick={() =>
+              selectedLayer && triggerReplaceImage(selectedLayer.id)
+            }
+            onRemoveBackground={() =>
+              selectedLayer && handleRemoveBackground(selectedLayer.id)
+            }
+            onRestoreOriginal={() =>
+              selectedLayer && handleRestoreOriginal(selectedLayer.id)
+            }
+            isDetectingContour={detectingContourLayerId === selectedLayerId}
+            isRemovingBackground={removingBackgroundLayerId === selectedLayerId}
           />
-        }
-        canvasArea={
-          <>
-            <StickerCanvas
-              layers={layers}
-              selectedLayerId={selectedLayerId}
-              onSelectLayer={setSelectedLayerId}
-              onUpdateLayer={handleUpdateLayer}
-              onCommitHistory={commitCurrentHistory}
-              shape={shape}
-              stageRef={stageRef}
-              showGuides={showGuides}
-              zoom={zoom}
-              borderColor={borderColor}
-            />
 
-            {layers.length === 0 && (
-              <p className="mt-4 text-center text-sm font-medium text-black/40">
-                Click &ldquo;Add Image&rdquo; or &ldquo;Add Text&rdquo; above
-                to start designing.
-              </p>
-            )}
+          {layers.length === 0 && (
+            <p className="mt-4 text-center text-sm font-medium text-black/40">
+              Tap &ldquo;Add Image&rdquo; or &ldquo;Add Text&rdquo; on the
+              right to start designing.
+            </p>
+          )}
 
-            {uploadError && (
-              <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">
-                {uploadError}
-              </p>
-            )}
+          {uploadError && (
+            <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">
+              {uploadError}
+            </p>
+          )}
 
-            {isUploading && (
-              <p className="mt-4 text-center text-xs font-semibold text-black/40">
-                {uploadStatusMessage}
-              </p>
-            )}
-          </>
-        }
-        panelArea={panelContent}
-      />
+          {isUploading && (
+            <p className="mt-4 text-center text-xs font-semibold text-black/40">
+              {uploadStatusMessage}
+            </p>
+          )}
+        </div>
+
+        <RightRail
+          onAddText={handleAddText}
+          onAddImageClick={triggerAddImage}
+          onAddEmoji={handleAddEmoji}
+          shape={shape}
+          onShapeChange={setShape}
+          borderColor={borderColor}
+          onBorderColorChange={setBorderColor}
+          borderWidth={borderWidth}
+          onBorderWidthChange={setBorderWidth}
+          canvasBackgroundColor={canvasBackgroundColor}
+          onCanvasBackgroundColorChange={setCanvasBackgroundColor}
+          layers={layers}
+          selectedLayerId={selectedLayerId}
+          onSelectLayer={setSelectedLayerId}
+          onDeleteLayer={deleteLayer}
+          onMoveLayer={moveLayer}
+        />
+      </div>
+
+      {eraserOpen && selectedLayer?.type === "image" && (
+        <ImageEraserModal
+          imageSrc={selectedLayer.src}
+          onApply={(newSrc) => {
+            handleManualErase(selectedLayer.id, newSrc);
+            setEraserOpen(false);
+          }}
+          onClose={() => setEraserOpen(false)}
+        />
+      )}
     </main>
   );
 }

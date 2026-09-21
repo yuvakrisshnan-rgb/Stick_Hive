@@ -1,32 +1,138 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
+
+import FlyoutPopover from "./flyout-popover";
 
 // ============================================================================
-// EMOJI PICKER
+// EMOJI PICKER (Task 4 — right-rail flyout)
 // ============================================================================
-// A quick-add element type distinct from the image-upload flow (Task 3) -
-// checked package.json first: no emoji-picker library is already installed
-// (emoji-picker-react, emoji-mart, etc. - none present). Rather than add a
-// new dependency for what's fundamentally a static lookup grid, this
-// renders real Unicode emoji characters directly - every modern OS/browser
-// already renders these natively via its system emoji font, so there's no
-// asset to ship or bundle-size cost at all. Selecting one hands the caller
-// a plain string; sticker-builder.tsx adds it as an ordinary text layer
-// (large font size, no special-cased "emoji layer" type needed - it's just
-// text that happens to be an emoji, so it gets drag/resize/rotate/flip/lock
-// for free from the exact same code path every text layer already uses).
+// package.json has no emoji-picker dependency (emoji-mart, emoji-picker-
+// react, etc. all absent — checked before writing this). Rather than pull in
+// an emoji database library purely to get search, this keeps the prior
+// sprint's zero-bundle-cost approach (real Unicode characters, rendered by
+// the OS's own emoji font — no asset to ship) and makes it genuinely
+// searchable by attaching keyword tags to a much larger curated set and
+// filtering client-side. That satisfies "real, searchable" without adding a
+// dependency; a real library remains the fallback if this set ever proves
+// too small.
 
-const CURATED_EMOJI = [
-  "😀", "😂", "🥹", "😍", "😎", "🥳", "😭", "😡",
-  "🤔", "🙄", "😴", "🤯", "🥺", "😇", "🤩", "😱",
-  "❤️", "💛", "💚", "💙", "💜", "🖤", "🤍", "💯",
-  "🔥", "✨", "⭐", "🌈", "☀️", "🌙", "⚡", "💧",
-  "👍", "👎", "👏", "🙌", "🤝", "✌️", "🤞", "👀",
-  "🐝", "🐶", "🐱", "🦄", "🐼", "🦋", "🌸", "🍀",
-  "🍕", "🍔", "🍩", "🍦", "☕", "🎂", "🍓", "🥑",
-  "🎉", "🎈", "🎁", "🏆", "💰", "📌", "💡", "🚀",
+type EmojiEntry = { char: string; tags: string[] };
+
+const EMOJI_CATEGORIES: { label: string; items: EmojiEntry[] }[] = [
+  {
+    label: "Smileys",
+    items: [
+      { char: "😀", tags: ["happy", "smile", "grin"] },
+      { char: "😂", tags: ["laugh", "lol", "crying laughing", "funny"] },
+      { char: "🥹", tags: ["touched", "holding back tears"] },
+      { char: "😍", tags: ["love", "heart eyes", "crush"] },
+      { char: "😎", tags: ["cool", "sunglasses"] },
+      { char: "🥳", tags: ["party", "celebrate", "birthday"] },
+      { char: "😭", tags: ["cry", "sad", "sob"] },
+      { char: "😡", tags: ["angry", "mad", "rage"] },
+      { char: "🤔", tags: ["think", "hmm", "wonder"] },
+      { char: "🙄", tags: ["eyeroll", "annoyed"] },
+      { char: "😴", tags: ["sleep", "tired", "zzz"] },
+      { char: "🤯", tags: ["mind blown", "shocked"] },
+      { char: "🥺", tags: ["pleading", "puppy eyes", "cute"] },
+      { char: "😇", tags: ["angel", "innocent", "halo"] },
+      { char: "🤩", tags: ["star struck", "excited", "wow"] },
+      { char: "😱", tags: ["scream", "shocked", "scared"] },
+      { char: "😏", tags: ["smirk", "sly"] },
+      { char: "😜", tags: ["wink", "tongue", "silly"] },
+      { char: "🤪", tags: ["crazy", "zany", "goofy"] },
+      { char: "🥶", tags: ["cold", "freezing"] },
+      { char: "🥵", tags: ["hot", "sweating"] },
+      { char: "😤", tags: ["frustrated", "huff"] },
+      { char: "😬", tags: ["grimace", "awkward", "yikes"] },
+      { char: "🤗", tags: ["hug", "welcome"] },
+    ],
+  },
+  {
+    label: "Hearts",
+    items: [
+      { char: "❤️", tags: ["heart", "love", "red"] },
+      { char: "💛", tags: ["heart", "yellow"] },
+      { char: "💚", tags: ["heart", "green"] },
+      { char: "💙", tags: ["heart", "blue"] },
+      { char: "💜", tags: ["heart", "purple"] },
+      { char: "🖤", tags: ["heart", "black"] },
+      { char: "🤍", tags: ["heart", "white"] },
+      { char: "🧡", tags: ["heart", "orange"] },
+      { char: "💯", tags: ["100", "perfect", "score"] },
+      { char: "💕", tags: ["hearts", "love", "cute"] },
+      { char: "💖", tags: ["sparkle heart", "love"] },
+      { char: "💔", tags: ["broken heart", "sad"] },
+    ],
+  },
+  {
+    label: "Nature",
+    items: [
+      { char: "🔥", tags: ["fire", "hot", "lit"] },
+      { char: "✨", tags: ["sparkles", "shine", "magic"] },
+      { char: "⭐", tags: ["star"] },
+      { char: "🌈", tags: ["rainbow", "pride"] },
+      { char: "☀️", tags: ["sun", "sunny"] },
+      { char: "🌙", tags: ["moon", "night"] },
+      { char: "⚡", tags: ["lightning", "bolt", "zap"] },
+      { char: "💧", tags: ["water", "drop", "tear"] },
+      { char: "🐝", tags: ["bee", "insect"] },
+      { char: "🐶", tags: ["dog", "puppy"] },
+      { char: "🐱", tags: ["cat", "kitten"] },
+      { char: "🦄", tags: ["unicorn", "magic"] },
+      { char: "🐼", tags: ["panda"] },
+      { char: "🦋", tags: ["butterfly"] },
+      { char: "🌸", tags: ["flower", "blossom", "cherry"] },
+      { char: "🍀", tags: ["clover", "lucky"] },
+      { char: "🌵", tags: ["cactus"] },
+      { char: "🐸", tags: ["frog"] },
+    ],
+  },
+  {
+    label: "Food",
+    items: [
+      { char: "🍕", tags: ["pizza"] },
+      { char: "🍔", tags: ["burger"] },
+      { char: "🍩", tags: ["donut"] },
+      { char: "🍦", tags: ["ice cream"] },
+      { char: "☕", tags: ["coffee"] },
+      { char: "🎂", tags: ["cake", "birthday"] },
+      { char: "🍓", tags: ["strawberry"] },
+      { char: "🥑", tags: ["avocado"] },
+      { char: "🍉", tags: ["watermelon"] },
+      { char: "🧋", tags: ["boba", "bubble tea"] },
+    ],
+  },
+  {
+    label: "Objects",
+    items: [
+      { char: "👍", tags: ["thumbs up", "like", "yes"] },
+      { char: "👎", tags: ["thumbs down", "no"] },
+      { char: "👏", tags: ["clap", "applause"] },
+      { char: "🙌", tags: ["hands up", "celebrate"] },
+      { char: "🤝", tags: ["handshake", "deal"] },
+      { char: "✌️", tags: ["peace", "victory"] },
+      { char: "🤞", tags: ["fingers crossed", "luck"] },
+      { char: "👀", tags: ["eyes", "look"] },
+      { char: "🎉", tags: ["party", "confetti", "celebrate"] },
+      { char: "🎈", tags: ["balloon"] },
+      { char: "🎁", tags: ["gift", "present"] },
+      { char: "🏆", tags: ["trophy", "win"] },
+      { char: "💰", tags: ["money", "cash"] },
+      { char: "📌", tags: ["pin"] },
+      { char: "💡", tags: ["idea", "lightbulb"] },
+      { char: "🚀", tags: ["rocket", "launch"] },
+      { char: "🎧", tags: ["headphones", "music"] },
+      { char: "📷", tags: ["camera", "photo"] },
+      { char: "👑", tags: ["crown", "king", "queen"] },
+      { char: "💎", tags: ["diamond", "gem"] },
+    ],
+  },
 ];
+
+const ALL_EMOJI = EMOJI_CATEGORIES.flatMap((category) => category.items);
 
 export default function EmojiPicker({
   onSelect,
@@ -35,80 +141,111 @@ export default function EmojiPicker({
   onSelect: (emoji: string) => void;
   onClose: () => void;
 }) {
-  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    function handlePointerDown(event: PointerEvent) {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(event.target as Node)
-      ) {
-        onClose();
-      }
-    }
+  const results = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return null;
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose]);
+    return ALL_EMOJI.filter(
+      (entry) =>
+        entry.tags.some((tag) => tag.includes(normalized)) ||
+        entry.char === normalized,
+    );
+  }, [query]);
 
   return (
-    <div
-      ref={popoverRef}
-      role="dialog"
-      aria-label="Add emoji"
+    <FlyoutPopover label="Add emoji" onClose={onClose} widthClassName="w-72">
+      <div className="p-3">
+        <div className="relative">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
+          />
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search emoji…"
+            autoFocus
+            className="
+              h-9
+              w-full
+              rounded-xl
+              border
+              border-black/10
+              bg-cream/60
+              pl-9
+              pr-3
+              text-sm
+              outline-none
+              transition
+              focus:border-black/30
+            "
+          />
+        </div>
+
+        <div className="mt-3 max-h-64 overflow-y-auto">
+          {results ? (
+            results.length === 0 ? (
+              <p className="px-1 py-6 text-center text-xs font-semibold text-black/40">
+                No emoji found for &ldquo;{query}&rdquo;
+              </p>
+            ) : (
+              <div className="grid grid-cols-8 gap-1">
+                {results.map((entry) => (
+                  <EmojiCell key={entry.char} entry={entry} onSelect={onSelect} />
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="space-y-3">
+              {EMOJI_CATEGORIES.map((category) => (
+                <div key={category.label}>
+                  <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-black/40">
+                    {category.label}
+                  </p>
+                  <div className="grid grid-cols-8 gap-1">
+                    {category.items.map((entry) => (
+                      <EmojiCell key={entry.char} entry={entry} onSelect={onSelect} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </FlyoutPopover>
+  );
+}
+
+function EmojiCell({
+  entry,
+  onSelect,
+}: {
+  entry: EmojiEntry;
+  onSelect: (emoji: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(entry.char)}
+      title={entry.tags[0]}
       className="
-        absolute
-        left-0
-        top-full
-        z-30
-        mt-2
-        w-64
-        rounded-2xl
-        border
-        border-black/10
-        bg-white
-        p-3
-        shadow-[0_20px_50px_rgba(0,0,0,0.15)]
+        flex
+        size-7
+        items-center
+        justify-center
+        rounded-lg
+        text-lg
+        leading-none
+        transition
+        hover:scale-110
+        hover:bg-cream
       "
     >
-      <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-black/40">
-        Tap to add
-      </p>
-
-      <div className="grid grid-cols-8 gap-1">
-        {CURATED_EMOJI.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => onSelect(emoji)}
-            className="
-              flex
-              size-7
-              items-center
-              justify-center
-              rounded-lg
-              text-lg
-              leading-none
-              transition
-              hover:scale-110
-              hover:bg-cream
-            "
-          >
-            {emoji}
-          </button>
-        ))}
-      </div>
-    </div>
+      {entry.char}
+    </button>
   );
 }
