@@ -1,11 +1,24 @@
 ﻿import { test, expect } from "@playwright/test";
 
+// next.config.ts's CSP deliberately omits 'unsafe-eval' (documented there:
+// re-enabling it site-wide is a bigger XSS trade-off than the one dev-mode
+// convenience it would restore). The unavoidable side effect, confirmed by
+// the message's own text ("React will never use eval() in production
+// mode"), is that React's dev-only debugging eval() calls log this exact
+// console error on every single page load under `next dev` - it's not
+// present in production and isn't a real per-page defect, so it's
+// filtered out here rather than either weakening the CSP or asserting
+// against a message this suite can never actually keep clean under dev.
+const KNOWN_DEV_ONLY_NOISE = /eval\(\) is not supported in this environment/;
+
 test.describe("Public pages load without errors", () => {
   test("homepage renders hero and CTA", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
     page.on("console", (msg) => {
-      if (msg.type() === "error") errors.push(msg.text());
+      if (msg.type() === "error" && !KNOWN_DEV_ONLY_NOISE.test(msg.text())) {
+        errors.push(msg.text());
+      }
     });
 
     await page.goto("/");
@@ -23,7 +36,10 @@ test.describe("Public pages load without errors", () => {
     page.on("pageerror", (err) => errors.push(err.message));
 
     await page.goto("/about");
-    await expect(page.getByText(/from a classroom idea/i)).toBeVisible();
+    // Current copy (src/app/about/page.tsx:227) is "began as a classroom
+    // idea", not "from a classroom idea" - this regex was checking for
+    // wording the page has never actually had in this session's history.
+    await expect(page.getByText(/classroom idea/i).first()).toBeVisible();
     await page.waitForTimeout(1000);
 
     expect(errors).toEqual([]);

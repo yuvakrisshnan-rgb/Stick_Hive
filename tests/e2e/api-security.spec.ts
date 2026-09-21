@@ -7,8 +7,14 @@ test.describe("Admin API rejects unauthenticated access", () => {
   });
 
   test("GET /api/admin/orders/:id returns 401 without a session", async ({ request }) => {
+    // src/app/api/admin/orders/[orderId]/route.ts only exports PATCH (order
+    // status updates) - there's no GET handler on this path at all, so
+    // Next.js itself returns a framework-level 405 before any auth check
+    // ever runs. That's not a leak (405 carries no order data either way)
+    // and not new: this route has never had a GET handler. 401/404 was the
+    // wrong expectation for a method the route was never built to serve.
     const response = await request.get("/api/admin/orders/SH-TEST1234");
-    expect([401, 404]).toContain(response.status());
+    expect([401, 404, 405]).toContain(response.status());
   });
 
   test("the admin UI path itself does not leak order data without auth", async ({ page }) => {
@@ -29,8 +35,17 @@ test.describe("Authenticated user API enforces ownership (IDOR check)", () => {
 });
 
 test.describe("Auth endpoints validate and rate-limit input", () => {
+  // Each test below sends its own x-forwarded-for so it gets a fresh
+  // rate-limit bucket. Without this, these malformed-payload checks share
+  // the default 127.0.0.1 bucket with the "repeated"/"concurrent" tests
+  // further down in this same describe block, which deliberately trip the
+  // send-otp cooldown - fullyParallel means test order/interleaving isn't
+  // guaranteed, so a shared bucket makes these fail with 429 instead of
+  // 400 whenever a cooldown test runs first. Same fix already applied to
+  // the malformed-body-handling tests below.
   test("send-otp rejects a non-string / malformed email payload", async ({ request }) => {
     const response = await request.post("/api/auth/send-otp", {
+      headers: { "x-forwarded-for": `10.0.4.${Date.now() % 250}` },
       data: { email: { $ne: null } },
     });
     expect(response.status()).toBe(400);
@@ -38,6 +53,7 @@ test.describe("Auth endpoints validate and rate-limit input", () => {
 
   test("send-otp rejects an invalid email format", async ({ request }) => {
     const response = await request.post("/api/auth/send-otp", {
+      headers: { "x-forwarded-for": `10.0.5.${Date.now() % 250}` },
       data: { email: "not-an-email" },
     });
     expect(response.status()).toBe(400);
