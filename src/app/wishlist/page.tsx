@@ -15,10 +15,6 @@ import {
 } from "motion/react"
 
 import {
-  PRODUCTS,
-} from "@/lib/product-data"
-
-import {
   ProductCard,
 } from "@/components/products/product-card"
 
@@ -29,6 +25,10 @@ import {
 import {
   useAuth,
 } from "@/components/auth/auth-provider"
+
+import {
+  useShop,
+} from "@/components/shop/store-provider"
 
 
 // ============================================================================
@@ -47,14 +47,21 @@ export default function WishlistPage() {
     clearWishlist,
   } = useWishlist()
 
+  const { getProduct } = useShop()
 
+
+  // getProduct resolves against the same dynamic (static-array-seeded,
+  // then /api/products-loaded) catalog the cart uses - see
+  // store-provider.tsx - rather than the static PRODUCTS array directly,
+  // so a wishlisted D1-only product actually shows up here instead of
+  // silently vanishing (wishlist-provider.tsx itself stores raw ids with
+  // no product validation at all, so a D1 id can already be wishlisted
+  // today - this is purely about resolving it back to a displayable
+  // product).
   const wishlistProducts =
-    PRODUCTS.filter(
-      (product) =>
-        wishlist.includes(
-          product.id,
-        ),
-    )
+    wishlist
+      .map((productId) => getProduct(productId))
+      .filter((product) => product !== undefined)
 
 
   if (authLoading) {

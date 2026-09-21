@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ' *)",
+      "Bash(git --no-pager diff -- src/lib/custom-sticker/contour.ts src/lib/custom-sticker/background-removal.ts)",
+      "Bash(git --no-pager diff -- src/lib/custom-sticker/mask-cleanup.ts)",
+      "Bash(powershell -Command \"Stop-Process -Id 15108 -Force -ErrorAction SilentlyContinue; Stop-Process -Id 10104 -Force -ErrorAction SilentlyContinue; Stop-Process -Id 14636 -Force -ErrorAction SilentlyContinue; Stop-Process -Id 10392 -Force -ErrorAction SilentlyContinue; Stop-Process -Id 8408 -Force -ErrorAction SilentlyContinue; Stop-Process -Id 3804 -Force -ErrorAction SilentlyContinue\")",
+      "Bash(git --no-pager diff -- src/lib/custom-sticker/background-removal.ts)",
+      "Bash(sed -n '1,395p' \"src/lib/custom-sticker/mask-cleanup.ts\" > /tmp/mask-cleanup-trimmed.ts *)",
+      "Bash(git --no-pager diff --stat -- src/lib/custom-sticker/contour.ts src/lib/custom-sticker/mask-cleanup.ts)",
+      "Bash(grep -n \"^  {$\\\\|id:\\\\|name:\\\\|offer:\\\\|isPremium: true\" \"src/lib/product-data.ts\")",
+      "Bash(awk ' *)",
+      "Bash(git --no-pager diff -- src/components/products/product-card.tsx)",
+      "Bash(node -e \"const m = require\\('motion/react'\\); console.log\\(typeof m.useInView\\)\")",
+      "Bash(git --no-pager diff --stat -- src/components/products/product-card.tsx)",
+      "Bash(git --no-pager diff -- src/components/home/hero.tsx)",
+      "Bash(git --no-pager diff -- src/components/sections/trending-stickers.tsx)",
+      "Bash(powershell -Command \"Stop-Process -Name node -Force -ErrorAction SilentlyContinue\")",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='node.exe'\\\\\"\")",
+      "Bash(git --no-pager diff -- src/components/shop/sticker-image.tsx src/components/cart/cart-drawer.tsx src/app/order-success/page.tsx src/components/custom-sticker/sticker-builder.tsx)",
+      "Bash(git restore *)",
+      "Bash(git --no-pager diff --cached --stat)",
+      "Bash(git --no-pager show 60eb148 -- src/components/products/product-card.tsx)",
+      "Bash(grep -iv \"filteredProducts\\\\|// \\\\|/\\\\*\")",
+      "Bash(git --no-pager diff -- src/components/shop/shop-catalog.tsx)",
+      "Bash(git fetch *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/ --max-time 5)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\")"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
+    ]
+  }
+}

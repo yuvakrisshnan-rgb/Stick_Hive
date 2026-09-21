@@ -3,11 +3,11 @@ import { getD1, nowIso } from "../db/d1";
 import { getCurrentUser, isAdminUser } from "../auth/service";
 import { getS3BucketName, getS3Client } from "../storage/s3";
 import {
-  PRODUCTS,
   SIZE_PRICES,
   priceFor,
   type StickerSize,
 } from "../../src/lib/product-data";
+import { getShopProductBySlug } from "../products/catalog";
 import { FREE_SHIPPING_THRESHOLD, SHIPPING_FEE, getRazorpayPlatformFee } from "../../src/lib/cart/calculations";
 
 const UPI_PAYMENT_WINDOW_MINUTES = 20;
@@ -339,7 +339,6 @@ async function hydrateOrders(db: D1Database, orderRows: OrderRow[]): Promise<Ord
   return orderRows.map((row) => rowToOrder(row, itemsByOrder.get(row.order_id) ?? []));
 }
 
-const PRODUCT_BY_ID = new Map(PRODUCTS.map((product) => [product.id, product]));
 const MAX_QUANTITY = 10;
 
 function generateOrderId(): string {
@@ -483,7 +482,15 @@ export async function createOrderFromCheckout(input: {
       const quantity = assertQuantity(item.quantity);
 
       if (item.type === "product") {
-        const product = PRODUCT_BY_ID.get(item.productId);
+        // Same data layer /shop and /shop/[id] read from (catalog.ts,
+        // flag-gated between the static array and D1 via PRODUCTS_SOURCE -
+        // see DECISIONS.md/DEPLOY_CHECKLIST.md), not a second parallel
+        // lookup. getActiveProductBySlug's own WHERE clause already
+        // excludes anything that isn't status='active' AND needs_review=0
+        // (backend/products/service.ts), so a draft or needs-review
+        // product resolves to null here and fails the same "unavailable"
+        // path as an unknown product ID - it never reaches priceFor().
+        const product = await getShopProductBySlug(item.productId);
         if (!product || !product.inStock) throw new Error("One of the selected products is unavailable.");
         if (!product.sizes.includes(item.size)) throw new Error(`Size ${item.size} is not available for ${product.name}.`);
 

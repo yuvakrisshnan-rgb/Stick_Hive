@@ -57,20 +57,32 @@ function toProduct(row: ProductRow): Product {
   };
 }
 
-/** Every status='active' product, for /shop's browse/search/filter/sort UI. */
+// A row is only really purchasable/listable when both conditions hold.
+// Today every seeded row happens to have needs_review=1 only on draft rows
+// (confirmed against local D1: status='active' -> needs_review=0 and
+// status='draft' -> needs_review=1 with zero exceptions), so filtering on
+// status alone currently has the same effect - but that's an incidental
+// property of the current seed, not a guarantee (e.g. a future admin
+// action could flip status to 'active' without clearing needs_review).
+// checkout's purchasability check (backend/orders/service.ts) depends on
+// this exact WHERE clause, not just on status, so both conditions are
+// enforced explicitly here rather than relying on that correlation holding.
+const PURCHASABLE_WHERE = "status = 'active' AND needs_review = 0";
+
+/** Every purchasable product, for /shop's browse/search/filter/sort UI. */
 export async function listActiveProducts(): Promise<Product[]> {
   const db = getD1();
   const { results } = await db
-    .prepare(`SELECT ${PRODUCT_COLUMNS} FROM products WHERE status = 'active' ORDER BY created_at DESC`)
+    .prepare(`SELECT ${PRODUCT_COLUMNS} FROM products WHERE ${PURCHASABLE_WHERE} ORDER BY created_at DESC`)
     .all<ProductRow>();
   return results.map(toProduct);
 }
 
-/** A single active product by slug, for /shop/[id]. Returns null (not a draft row) if not found or not active. */
+/** A single purchasable product by slug, for /shop/[id] and checkout validation. Returns null (not a draft/needs-review row) if not found or not purchasable. */
 export async function getActiveProductBySlug(slug: string): Promise<Product | null> {
   const db = getD1();
   const row = await db
-    .prepare(`SELECT ${PRODUCT_COLUMNS} FROM products WHERE slug = ? AND status = 'active'`)
+    .prepare(`SELECT ${PRODUCT_COLUMNS} FROM products WHERE slug = ? AND ${PURCHASABLE_WHERE}`)
     .bind(slug)
     .first<ProductRow>();
   return row ? toProduct(row) : null;
