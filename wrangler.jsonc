@@ -19,17 +19,20 @@
       "migrations_dir": "migrations"
     }
   ],
-  // The bucket itself does not exist yet - this binding is config only.
-  // See scripts/upload-product-images-r2.mjs's header comment for the
-  // exact `wrangler r2 bucket create`/`dev-url enable` commands to run
-  // before this binding refers to anything real. Local dev tolerates an
-  // as-yet-nonexistent remote bucket the same way it already does for D1.
-  "r2_buckets": [
-    {
-      "binding": "PRODUCT_IMAGES",
-      "bucket_name": "stickhive-product-images"
-    }
-  ],
+  // r2_buckets removed 2026-09-21: `wrangler deploy` validates every
+  // binding against the real Cloudflare account at deploy time (unlike
+  // local dev, which tolerates an as-yet-nonexistent bucket) - and R2
+  // turns out not to be enabled on this account at all yet (confirmed via
+  // `wrangler r2 bucket list`: "Please enable R2 through the Cloudflare
+  // Dashboard [code: 10042]"), so this binding hard-failed every deploy
+  // attempt with "R2 bucket 'stickhive-product-images' not found [code:
+  // 10085]" regardless of anything else in this file. Nothing in the live
+  // Worker reads env.PRODUCT_IMAGES today - only backend/storage/r2.ts,
+  // itself only called by scripts/upload-product-images-r2.mjs, a local
+  // script that has never been run (see DEPLOY_CHECKLIST.md) - so removing
+  // it unblocks deployment with no runtime behavior change. Re-add once R2
+  // is enabled on the account and the bucket actually exists
+  // (`wrangler r2 bucket create stickhive-product-images`).
   // D1 lives in APAC (Singapore). Investigation into a run of 502s found
   // all of them landed on the Marseille (MRS) edge PoP specifically -
   // the farthest point on the globe from APAC - while every successful
@@ -59,9 +62,20 @@
   // will fail with "STICKHIVE_UPI_ID is not configured" until a real one
   // is added here; OTP emails fall back to Resend's shared sandbox
   // sender (onboarding@resend.dev) until AUTH_FROM_EMAIL is set.
+  //
+  // PRODUCTS_SOURCE=d1: the remote products table (migrations/0006) has
+  // been applied and seeded (194 rows, 107 active - see DEPLOY_CHECKLIST.md
+  // and DECISIONS.md) as of 2026-09-21, so /shop and checkout
+  // (backend/products/catalog.ts) now read the real D1 catalogue in
+  // production instead of the static PRODUCTS array fallback. Product
+  // images are not part of this - R2 is not yet enabled on this Cloudflare
+  // account at all (confirmed via `wrangler r2 bucket list`), so every
+  // product still renders its emoji placeholder; that's expected, not a
+  // regression, until the R2 step in DEPLOY_CHECKLIST.md actually runs.
   "vars": {
     "AUTH_DEBUG_OTP": "false",
     "STICKHIVE_ADMIN_EMAILS": "yuvakrisshnan@gmail.com",
-    "STICKHIVE_UPI_NAME": "Stick Hive"
+    "STICKHIVE_UPI_NAME": "Stick Hive",
+    "PRODUCTS_SOURCE": "d1"
   }
 }
