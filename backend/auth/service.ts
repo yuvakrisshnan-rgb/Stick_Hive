@@ -54,6 +54,11 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
   });
 
   if (result.error) {
+    // Diagnostic only - captures Resend's real error (name/message/status)
+    // server-side so it's visible via `wrangler tail`, without changing the
+    // generic message the caller still sees. Temporary instrumentation for
+    // investigating a live "unable to send" report - not a behavior change.
+    console.error(`[Stick Hive auth] Resend send failed for ${email}:`, JSON.stringify(result.error));
     throw new Error("Unable to send verification email.");
   }
 }
