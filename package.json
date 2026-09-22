@@ -18,7 +18,8 @@
     "dev:vinext": "vinext dev --port 3001",
     "build:vinext": "vinext build",
     "start:vinext": "wrangler dev --config dist/server/wrangler.json",
-    "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json"
+    "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.879.0",
@@ -73,6 +74,7 @@
     "@vitejs/plugin-rsc": "^0.5.35",
     "eslint": "^9.17.0",
     "eslint-config-next": "16.3.0",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.7.2",
     "vite": "^8.3.0",

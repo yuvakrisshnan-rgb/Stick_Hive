@@ -1,0 +1,638 @@
+diff --git a/node_modules/@imgly/background-removal/dist/index.cjs b/node_modules/@imgly/background-removal/dist/index.cjs
+index 74683df..9eae31b 100644
+--- a/node_modules/@imgly/background-removal/dist/index.cjs
++++ b/node_modules/@imgly/background-removal/dist/index.cjs
+@@ -82,147 +82,183 @@ var require_ndarray = __commonJS({
+       }
+       return result;
+     }
+-    function compileConstructor(dtype, dimension) {
+-      var className = ["View", dimension, "d", dtype].join("");
+-      if (dimension < 0) {
+-        className = "View_Nil" + dtype;
++    function ndarrayUseGetters(dtype) {
++      return dtype === "generic";
++    }
++    function ndarrayDataGet(dtype, data, idx) {
++      return ndarrayUseGetters(dtype) ? data.get(idx) : data[idx];
++    }
++    function ndarrayDataSet(dtype, data, idx, v) {
++      if (ndarrayUseGetters(dtype)) {
++        data.set(idx, v);
++      } else {
++        data[idx] = v;
+       }
+-      var useGetters = dtype === "generic";
+-      if (dimension === -1) {
+-        var code = "function " + className + "(a){this.data=a;};var proto=" + className + ".prototype;proto.dtype='" + dtype + "';proto.index=function(){return -1};proto.size=0;proto.dimension=-1;proto.shape=proto.stride=proto.order=[];proto.lo=proto.hi=proto.transpose=proto.step=function(){return new " + className + "(this.data);};proto.get=proto.set=function(){};proto.pick=function(){return null};return function construct_" + className + "(a){return new " + className + "(a);}";
+-        var procedure = new Function(code);
+-        return procedure();
+-      } else if (dimension === 0) {
+-        var code = "function " + className + "(a,d) {this.data = a;this.offset = d};var proto=" + className + ".prototype;proto.dtype='" + dtype + "';proto.index=function(){return this.offset};proto.dimension=0;proto.size=1;proto.shape=proto.stride=proto.order=[];proto.lo=proto.hi=proto.transpose=proto.step=function " + className + "_copy() {return new " + className + "(this.data,this.offset)};proto.pick=function " + className + "_pick(){return TrivialArray(this.data);};proto.valueOf=proto.get=function " + className + "_get(){return " + (useGetters ? "this.data.get(this.offset)" : "this.data[this.offset]") + "};proto.set=function " + className + "_set(v){return " + (useGetters ? "this.data.set(this.offset,v)" : "this.data[this.offset]=v") + "};return function construct_" + className + "(a,b,c,d){return new " + className + "(a,d)}";
+-        var procedure = new Function("TrivialArray", code);
+-        return procedure(CACHED_CONSTRUCTORS[dtype][0]);
++      return v;
++    }
++    function NdarrayNilView(dtype, data) {
++      this.data = data;
++      this.dtype = dtype;
++      this.dimension = -1;
++      this.offset = 0;
++      this.shape = this.stride = this.order = [];
++      this.size = 0;
++    }
++    NdarrayNilView.prototype.index = function() {
++      return -1;
++    };
++    NdarrayNilView.prototype.get = NdarrayNilView.prototype.set = function() {
++    };
++    NdarrayNilView.prototype.pick = function() {
++      return null;
++    };
++    NdarrayNilView.prototype.lo = NdarrayNilView.prototype.hi = NdarrayNilView.prototype.transpose = NdarrayNilView.prototype.step = function() {
++      return new NdarrayNilView(this.dtype, this.data);
++    };
++    function NdarrayScalarView(dtype, data, offset) {
++      this.data = data;
++      this.offset = offset | 0;
++      this.dtype = dtype;
++      this.dimension = 0;
++      this.shape = this.stride = this.order = [];
++      this.size = 1;
++    }
++    NdarrayScalarView.prototype.index = function() {
++      return this.offset;
++    };
++    NdarrayScalarView.prototype.lo = NdarrayScalarView.prototype.hi = NdarrayScalarView.prototype.transpose = NdarrayScalarView.prototype.step = function() {
++      return new NdarrayScalarView(this.dtype, this.data, this.offset);
++    };
++    NdarrayScalarView.prototype.pick = function() {
++      return new NdarrayNilView(this.dtype, this.data);
++    };
++    NdarrayScalarView.prototype.valueOf = NdarrayScalarView.prototype.get = function() {
++      return ndarrayDataGet(this.dtype, this.data, this.offset);
++    };
++    NdarrayScalarView.prototype.set = function(v) {
++      return ndarrayDataSet(this.dtype, this.data, this.offset, v);
++    };
++    function NdarrayGenericView(dtype, dimension, data, shape, stride, offset) {
++      this.data = data;
++      this.shape = shape;
++      this.stride = stride;
++      this.offset = offset | 0;
++      this.dtype = dtype;
++      this.dimension = dimension;
++      var size = 1;
++      for (var i2 = 0; i2 < shape.length; ++i2) {
++        size *= shape[i2];
+       }
+-      var code = ["'use strict'"];
+-      var indices = iota(dimension);
+-      var args = indices.map(function(i2) {
+-        return "i" + i2;
+-      });
+-      var index_str = "this.offset+" + indices.map(function(i2) {
+-        return "this.stride[" + i2 + "]*i" + i2;
+-      }).join("+");
+-      var shapeArg = indices.map(function(i2) {
+-        return "b" + i2;
+-      }).join(",");
+-      var strideArg = indices.map(function(i2) {
+-        return "c" + i2;
+-      }).join(",");
+-      code.push(
+-        "function " + className + "(a," + shapeArg + "," + strideArg + ",d){this.data=a",
+-        "this.shape=[" + shapeArg + "]",
+-        "this.stride=[" + strideArg + "]",
+-        "this.offset=d|0}",
+-        "var proto=" + className + ".prototype",
+-        "proto.dtype='" + dtype + "'",
+-        "proto.dimension=" + dimension
+-      );
+-      code.push(
+-        "Object.defineProperty(proto,'size',{get:function " + className + "_size(){return " + indices.map(function(i2) {
+-          return "this.shape[" + i2 + "]";
+-        }).join("*"),
+-        "}})"
+-      );
+-      if (dimension === 1) {
+-        code.push("proto.order=[0]");
+-      } else {
+-        code.push("Object.defineProperty(proto,'order',{get:");
+-        if (dimension < 4) {
+-          code.push("function " + className + "_order(){");
+-          if (dimension === 2) {
+-            code.push("return (Math.abs(this.stride[0])>Math.abs(this.stride[1]))?[1,0]:[0,1]}})");
+-          } else if (dimension === 3) {
+-            code.push(
+-              "var s0=Math.abs(this.stride[0]),s1=Math.abs(this.stride[1]),s2=Math.abs(this.stride[2]);if(s0>s1){if(s1>s2){return [2,1,0];}else if(s0>s2){return [1,2,0];}else{return [1,0,2];}}else if(s0>s2){return [2,0,1];}else if(s2>s1){return [0,1,2];}else{return [0,2,1];}}})"
+-            );
+-          }
+-        } else {
+-          code.push("ORDER})");
++      this.size = size;
++    }
++    var ndarrayGenericProto = NdarrayGenericView.prototype;
++    Object.defineProperty(ndarrayGenericProto, "order", { get: order });
++    ndarrayGenericProto.index = function() {
++      var idx = this.offset;
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        idx += this.stride[i2] * arguments[i2];
++      }
++      return idx;
++    };
++    ndarrayGenericProto.get = function() {
++      return ndarrayDataGet(this.dtype, this.data, this.index.apply(this, arguments));
++    };
++    ndarrayGenericProto.set = function() {
++      var v = arguments[arguments.length - 1];
++      var idx = this.offset;
++      for (var i2 = 0; i2 < arguments.length - 1; ++i2) {
++        idx += this.stride[i2] * arguments[i2];
++      }
++      return ndarrayDataSet(this.dtype, this.data, idx, v);
++    };
++    ndarrayGenericProto.hi = function() {
++      var newShape = this.shape.slice();
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number" && v >= 0) {
++          newShape[i2] = v | 0;
+         }
+       }
+-      code.push(
+-        "proto.set=function " + className + "_set(" + args.join(",") + ",v){"
+-      );
+-      if (useGetters) {
+-        code.push("return this.data.set(" + index_str + ",v)}");
+-      } else {
+-        code.push("return this.data[" + index_str + "]=v}");
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, this.stride.slice(), this.offset);
++    };
++    ndarrayGenericProto.lo = function() {
++      var b = this.offset;
++      var newShape = this.shape.slice();
++      var newStride = this.stride.slice();
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number" && v >= 0) {
++          var d = v | 0;
++          b += newStride[i2] * d;
++          newShape[i2] -= d;
++        }
+       }
+-      code.push("proto.get=function " + className + "_get(" + args.join(",") + "){");
+-      if (useGetters) {
+-        code.push("return this.data.get(" + index_str + ")}");
+-      } else {
+-        code.push("return this.data[" + index_str + "]}");
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, newStride, b);
++    };
++    ndarrayGenericProto.step = function() {
++      var newShape = this.shape.slice();
++      var newStride = this.stride.slice();
++      var c = this.offset;
++      var ceil = Math.ceil;
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number") {
++          var d = v | 0;
++          if (d < 0) {
++            c += newStride[i2] * (newShape[i2] - 1);
++            newShape[i2] = ceil(-newShape[i2] / d);
++          } else {
++            newShape[i2] = ceil(newShape[i2] / d);
++          }
++          newStride[i2] *= d;
++        }
+       }
+-      code.push(
+-        "proto.index=function " + className + "_index(",
+-        args.join(),
+-        "){return " + index_str + "}"
+-      );
+-      code.push("proto.hi=function " + className + "_hi(" + args.join(",") + "){return new " + className + "(this.data," + indices.map(function(i2) {
+-        return ["(typeof i", i2, "!=='number'||i", i2, "<0)?this.shape[", i2, "]:i", i2, "|0"].join("");
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "this.stride[" + i2 + "]";
+-      }).join(",") + ",this.offset)}");
+-      var a_vars = indices.map(function(i2) {
+-        return "a" + i2 + "=this.shape[" + i2 + "]";
+-      });
+-      var c_vars = indices.map(function(i2) {
+-        return "c" + i2 + "=this.stride[" + i2 + "]";
+-      });
+-      code.push("proto.lo=function " + className + "_lo(" + args.join(",") + "){var b=this.offset,d=0," + a_vars.join(",") + "," + c_vars.join(","));
+-      for (var i = 0; i < dimension; ++i) {
+-        code.push(
+-          "if(typeof i" + i + "==='number'&&i" + i + ">=0){d=i" + i + "|0;b+=c" + i + "*d;a" + i + "-=d}"
+-        );
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, newStride, c);
++    };
++    ndarrayGenericProto.transpose = function() {
++      var a = this.shape;
++      var b = this.stride;
++      var newShape = new Array(this.dimension);
++      var newStride = new Array(this.dimension);
++      for (var i2 = 0; i2 < this.dimension; ++i2) {
++        var idx = arguments[i2];
++        idx = idx === void 0 ? i2 : idx | 0;
++        newShape[i2] = a[idx];
++        newStride[i2] = b[idx];
+       }
+-      code.push("return new " + className + "(this.data," + indices.map(function(i2) {
+-        return "a" + i2;
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "c" + i2;
+-      }).join(",") + ",b)}");
+-      code.push("proto.step=function " + className + "_step(" + args.join(",") + "){var " + indices.map(function(i2) {
+-        return "a" + i2 + "=this.shape[" + i2 + "]";
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "b" + i2 + "=this.stride[" + i2 + "]";
+-      }).join(",") + ",c=this.offset,d=0,ceil=Math.ceil");
+-      for (var i = 0; i < dimension; ++i) {
+-        code.push(
+-          "if(typeof i" + i + "==='number'){d=i" + i + "|0;if(d<0){c+=b" + i + "*(a" + i + "-1);a" + i + "=ceil(-a" + i + "/d)}else{a" + i + "=ceil(a" + i + "/d)}b" + i + "*=d}"
+-        );
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, newStride, this.offset);
++    };
++    ndarrayGenericProto.pick = function() {
++      var a = [];
++      var b = [];
++      var c = this.offset;
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number" && v >= 0) {
++          c = (c + this.stride[i2] * v) | 0;
++        } else {
++          a.push(this.shape[i2]);
++          b.push(this.stride[i2]);
++        }
+       }
+-      code.push("return new " + className + "(this.data," + indices.map(function(i2) {
+-        return "a" + i2;
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "b" + i2;
+-      }).join(",") + ",c)}");
+-      var tShape = new Array(dimension);
+-      var tStride = new Array(dimension);
+-      for (var i = 0; i < dimension; ++i) {
+-        tShape[i] = "a[i" + i + "]";
+-        tStride[i] = "b[i" + i + "]";
++      if (a.length === 0) {
++        return new NdarrayScalarView(this.dtype, this.data, c);
+       }
+-      code.push(
+-        "proto.transpose=function " + className + "_transpose(" + args + "){" + args.map(function(n, idx) {
+-          return n + "=(" + n + "===undefined?" + idx + ":" + n + "|0)";
+-        }).join(";"),
+-        "var a=this.shape,b=this.stride;return new " + className + "(this.data," + tShape.join(",") + "," + tStride.join(",") + ",this.offset)}"
+-      );
+-      code.push("proto.pick=function " + className + "_pick(" + args + "){var a=[],b=[],c=this.offset");
+-      for (var i = 0; i < dimension; ++i) {
+-        code.push("if(typeof i" + i + "==='number'&&i" + i + ">=0){c=(c+this.stride[" + i + "]*i" + i + ")|0}else{a.push(this.shape[" + i + "]);b.push(this.stride[" + i + "])}");
++      return new NdarrayGenericView(this.dtype, a.length, this.data, a, b, c);
++    };
++    function compileConstructor(dtype, dimension) {
++      if (dimension === -1) {
++        return function construct_nil(a) {
++          return new NdarrayNilView(dtype, a);
++        };
++      } else if (dimension === 0) {
++        return function construct_scalar(a, b, c, d) {
++          return new NdarrayScalarView(dtype, a, d);
++        };
+       }
+-      code.push("var ctor=CTOR_LIST[a.length+1];return ctor(this.data,a,b,c)}");
+-      code.push("return function construct_" + className + "(data,shape,stride,offset){return new " + className + "(data," + indices.map(function(i2) {
+-        return "shape[" + i2 + "]";
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "stride[" + i2 + "]";
+-      }).join(",") + ",offset)}");
+-      var procedure = new Function("CTOR_LIST", "ORDER", code.join("\n"));
+-      return procedure(CACHED_CONSTRUCTORS[dtype], order);
++      return function construct_generic(data, shape, stride, offset) {
++        return new NdarrayGenericView(dtype, dimension, data, shape, stride, offset);
++      };
+     }
+     function arrayDType(data) {
+       if (isBuffer(data)) {
+diff --git a/node_modules/@imgly/background-removal/dist/index.mjs b/node_modules/@imgly/background-removal/dist/index.mjs
+index 0ea9fb5..0292949 100644
+--- a/node_modules/@imgly/background-removal/dist/index.mjs
++++ b/node_modules/@imgly/background-removal/dist/index.mjs
+@@ -77,147 +77,183 @@ var require_ndarray = __commonJS({
+       }
+       return result;
+     }
+-    function compileConstructor(dtype, dimension) {
+-      var className = ["View", dimension, "d", dtype].join("");
+-      if (dimension < 0) {
+-        className = "View_Nil" + dtype;
++    function ndarrayUseGetters(dtype) {
++      return dtype === "generic";
++    }
++    function ndarrayDataGet(dtype, data, idx) {
++      return ndarrayUseGetters(dtype) ? data.get(idx) : data[idx];
++    }
++    function ndarrayDataSet(dtype, data, idx, v) {
++      if (ndarrayUseGetters(dtype)) {
++        data.set(idx, v);
++      } else {
++        data[idx] = v;
+       }
+-      var useGetters = dtype === "generic";
+-      if (dimension === -1) {
+-        var code = "function " + className + "(a){this.data=a;};var proto=" + className + ".prototype;proto.dtype='" + dtype + "';proto.index=function(){return -1};proto.size=0;proto.dimension=-1;proto.shape=proto.stride=proto.order=[];proto.lo=proto.hi=proto.transpose=proto.step=function(){return new " + className + "(this.data);};proto.get=proto.set=function(){};proto.pick=function(){return null};return function construct_" + className + "(a){return new " + className + "(a);}";
+-        var procedure = new Function(code);
+-        return procedure();
+-      } else if (dimension === 0) {
+-        var code = "function " + className + "(a,d) {this.data = a;this.offset = d};var proto=" + className + ".prototype;proto.dtype='" + dtype + "';proto.index=function(){return this.offset};proto.dimension=0;proto.size=1;proto.shape=proto.stride=proto.order=[];proto.lo=proto.hi=proto.transpose=proto.step=function " + className + "_copy() {return new " + className + "(this.data,this.offset)};proto.pick=function " + className + "_pick(){return TrivialArray(this.data);};proto.valueOf=proto.get=function " + className + "_get(){return " + (useGetters ? "this.data.get(this.offset)" : "this.data[this.offset]") + "};proto.set=function " + className + "_set(v){return " + (useGetters ? "this.data.set(this.offset,v)" : "this.data[this.offset]=v") + "};return function construct_" + className + "(a,b,c,d){return new " + className + "(a,d)}";
+-        var procedure = new Function("TrivialArray", code);
+-        return procedure(CACHED_CONSTRUCTORS[dtype][0]);
++      return v;
++    }
++    function NdarrayNilView(dtype, data) {
++      this.data = data;
++      this.dtype = dtype;
++      this.dimension = -1;
++      this.offset = 0;
++      this.shape = this.stride = this.order = [];
++      this.size = 0;
++    }
++    NdarrayNilView.prototype.index = function() {
++      return -1;
++    };
++    NdarrayNilView.prototype.get = NdarrayNilView.prototype.set = function() {
++    };
++    NdarrayNilView.prototype.pick = function() {
++      return null;
++    };
++    NdarrayNilView.prototype.lo = NdarrayNilView.prototype.hi = NdarrayNilView.prototype.transpose = NdarrayNilView.prototype.step = function() {
++      return new NdarrayNilView(this.dtype, this.data);
++    };
++    function NdarrayScalarView(dtype, data, offset) {
++      this.data = data;
++      this.offset = offset | 0;
++      this.dtype = dtype;
++      this.dimension = 0;
++      this.shape = this.stride = this.order = [];
++      this.size = 1;
++    }
++    NdarrayScalarView.prototype.index = function() {
++      return this.offset;
++    };
++    NdarrayScalarView.prototype.lo = NdarrayScalarView.prototype.hi = NdarrayScalarView.prototype.transpose = NdarrayScalarView.prototype.step = function() {
++      return new NdarrayScalarView(this.dtype, this.data, this.offset);
++    };
++    NdarrayScalarView.prototype.pick = function() {
++      return new NdarrayNilView(this.dtype, this.data);
++    };
++    NdarrayScalarView.prototype.valueOf = NdarrayScalarView.prototype.get = function() {
++      return ndarrayDataGet(this.dtype, this.data, this.offset);
++    };
++    NdarrayScalarView.prototype.set = function(v) {
++      return ndarrayDataSet(this.dtype, this.data, this.offset, v);
++    };
++    function NdarrayGenericView(dtype, dimension, data, shape, stride, offset) {
++      this.data = data;
++      this.shape = shape;
++      this.stride = stride;
++      this.offset = offset | 0;
++      this.dtype = dtype;
++      this.dimension = dimension;
++      var size = 1;
++      for (var i2 = 0; i2 < shape.length; ++i2) {
++        size *= shape[i2];
+       }
+-      var code = ["'use strict'"];
+-      var indices = iota(dimension);
+-      var args = indices.map(function(i2) {
+-        return "i" + i2;
+-      });
+-      var index_str = "this.offset+" + indices.map(function(i2) {
+-        return "this.stride[" + i2 + "]*i" + i2;
+-      }).join("+");
+-      var shapeArg = indices.map(function(i2) {
+-        return "b" + i2;
+-      }).join(",");
+-      var strideArg = indices.map(function(i2) {
+-        return "c" + i2;
+-      }).join(",");
+-      code.push(
+-        "function " + className + "(a," + shapeArg + "," + strideArg + ",d){this.data=a",
+-        "this.shape=[" + shapeArg + "]",
+-        "this.stride=[" + strideArg + "]",
+-        "this.offset=d|0}",
+-        "var proto=" + className + ".prototype",
+-        "proto.dtype='" + dtype + "'",
+-        "proto.dimension=" + dimension
+-      );
+-      code.push(
+-        "Object.defineProperty(proto,'size',{get:function " + className + "_size(){return " + indices.map(function(i2) {
+-          return "this.shape[" + i2 + "]";
+-        }).join("*"),
+-        "}})"
+-      );
+-      if (dimension === 1) {
+-        code.push("proto.order=[0]");
+-      } else {
+-        code.push("Object.defineProperty(proto,'order',{get:");
+-        if (dimension < 4) {
+-          code.push("function " + className + "_order(){");
+-          if (dimension === 2) {
+-            code.push("return (Math.abs(this.stride[0])>Math.abs(this.stride[1]))?[1,0]:[0,1]}})");
+-          } else if (dimension === 3) {
+-            code.push(
+-              "var s0=Math.abs(this.stride[0]),s1=Math.abs(this.stride[1]),s2=Math.abs(this.stride[2]);if(s0>s1){if(s1>s2){return [2,1,0];}else if(s0>s2){return [1,2,0];}else{return [1,0,2];}}else if(s0>s2){return [2,0,1];}else if(s2>s1){return [0,1,2];}else{return [0,2,1];}}})"
+-            );
+-          }
+-        } else {
+-          code.push("ORDER})");
++      this.size = size;
++    }
++    var ndarrayGenericProto = NdarrayGenericView.prototype;
++    Object.defineProperty(ndarrayGenericProto, "order", { get: order });
++    ndarrayGenericProto.index = function() {
++      var idx = this.offset;
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        idx += this.stride[i2] * arguments[i2];
++      }
++      return idx;
++    };
++    ndarrayGenericProto.get = function() {
++      return ndarrayDataGet(this.dtype, this.data, this.index.apply(this, arguments));
++    };
++    ndarrayGenericProto.set = function() {
++      var v = arguments[arguments.length - 1];
++      var idx = this.offset;
++      for (var i2 = 0; i2 < arguments.length - 1; ++i2) {
++        idx += this.stride[i2] * arguments[i2];
++      }
++      return ndarrayDataSet(this.dtype, this.data, idx, v);
++    };
++    ndarrayGenericProto.hi = function() {
++      var newShape = this.shape.slice();
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number" && v >= 0) {
++          newShape[i2] = v | 0;
+         }
+       }
+-      code.push(
+-        "proto.set=function " + className + "_set(" + args.join(",") + ",v){"
+-      );
+-      if (useGetters) {
+-        code.push("return this.data.set(" + index_str + ",v)}");
+-      } else {
+-        code.push("return this.data[" + index_str + "]=v}");
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, this.stride.slice(), this.offset);
++    };
++    ndarrayGenericProto.lo = function() {
++      var b = this.offset;
++      var newShape = this.shape.slice();
++      var newStride = this.stride.slice();
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number" && v >= 0) {
++          var d = v | 0;
++          b += newStride[i2] * d;
++          newShape[i2] -= d;
++        }
+       }
+-      code.push("proto.get=function " + className + "_get(" + args.join(",") + "){");
+-      if (useGetters) {
+-        code.push("return this.data.get(" + index_str + ")}");
+-      } else {
+-        code.push("return this.data[" + index_str + "]}");
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, newStride, b);
++    };
++    ndarrayGenericProto.step = function() {
++      var newShape = this.shape.slice();
++      var newStride = this.stride.slice();
++      var c = this.offset;
++      var ceil = Math.ceil;
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number") {
++          var d = v | 0;
++          if (d < 0) {
++            c += newStride[i2] * (newShape[i2] - 1);
++            newShape[i2] = ceil(-newShape[i2] / d);
++          } else {
++            newShape[i2] = ceil(newShape[i2] / d);
++          }
++          newStride[i2] *= d;
++        }
+       }
+-      code.push(
+-        "proto.index=function " + className + "_index(",
+-        args.join(),
+-        "){return " + index_str + "}"
+-      );
+-      code.push("proto.hi=function " + className + "_hi(" + args.join(",") + "){return new " + className + "(this.data," + indices.map(function(i2) {
+-        return ["(typeof i", i2, "!=='number'||i", i2, "<0)?this.shape[", i2, "]:i", i2, "|0"].join("");
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "this.stride[" + i2 + "]";
+-      }).join(",") + ",this.offset)}");
+-      var a_vars = indices.map(function(i2) {
+-        return "a" + i2 + "=this.shape[" + i2 + "]";
+-      });
+-      var c_vars = indices.map(function(i2) {
+-        return "c" + i2 + "=this.stride[" + i2 + "]";
+-      });
+-      code.push("proto.lo=function " + className + "_lo(" + args.join(",") + "){var b=this.offset,d=0," + a_vars.join(",") + "," + c_vars.join(","));
+-      for (var i = 0; i < dimension; ++i) {
+-        code.push(
+-          "if(typeof i" + i + "==='number'&&i" + i + ">=0){d=i" + i + "|0;b+=c" + i + "*d;a" + i + "-=d}"
+-        );
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, newStride, c);
++    };
++    ndarrayGenericProto.transpose = function() {
++      var a = this.shape;
++      var b = this.stride;
++      var newShape = new Array(this.dimension);
++      var newStride = new Array(this.dimension);
++      for (var i2 = 0; i2 < this.dimension; ++i2) {
++        var idx = arguments[i2];
++        idx = idx === void 0 ? i2 : idx | 0;
++        newShape[i2] = a[idx];
++        newStride[i2] = b[idx];
+       }
+-      code.push("return new " + className + "(this.data," + indices.map(function(i2) {
+-        return "a" + i2;
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "c" + i2;
+-      }).join(",") + ",b)}");
+-      code.push("proto.step=function " + className + "_step(" + args.join(",") + "){var " + indices.map(function(i2) {
+-        return "a" + i2 + "=this.shape[" + i2 + "]";
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "b" + i2 + "=this.stride[" + i2 + "]";
+-      }).join(",") + ",c=this.offset,d=0,ceil=Math.ceil");
+-      for (var i = 0; i < dimension; ++i) {
+-        code.push(
+-          "if(typeof i" + i + "==='number'){d=i" + i + "|0;if(d<0){c+=b" + i + "*(a" + i + "-1);a" + i + "=ceil(-a" + i + "/d)}else{a" + i + "=ceil(a" + i + "/d)}b" + i + "*=d}"
+-        );
++      return new NdarrayGenericView(this.dtype, this.dimension, this.data, newShape, newStride, this.offset);
++    };
++    ndarrayGenericProto.pick = function() {
++      var a = [];
++      var b = [];
++      var c = this.offset;
++      for (var i2 = 0; i2 < arguments.length; ++i2) {
++        var v = arguments[i2];
++        if (typeof v === "number" && v >= 0) {
++          c = (c + this.stride[i2] * v) | 0;
++        } else {
++          a.push(this.shape[i2]);
++          b.push(this.stride[i2]);
++        }
+       }
+-      code.push("return new " + className + "(this.data," + indices.map(function(i2) {
+-        return "a" + i2;
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "b" + i2;
+-      }).join(",") + ",c)}");
+-      var tShape = new Array(dimension);
+-      var tStride = new Array(dimension);
+-      for (var i = 0; i < dimension; ++i) {
+-        tShape[i] = "a[i" + i + "]";
+-        tStride[i] = "b[i" + i + "]";
++      if (a.length === 0) {
++        return new NdarrayScalarView(this.dtype, this.data, c);
+       }
+-      code.push(
+-        "proto.transpose=function " + className + "_transpose(" + args + "){" + args.map(function(n, idx) {
+-          return n + "=(" + n + "===undefined?" + idx + ":" + n + "|0)";
+-        }).join(";"),
+-        "var a=this.shape,b=this.stride;return new " + className + "(this.data," + tShape.join(",") + "," + tStride.join(",") + ",this.offset)}"
+-      );
+-      code.push("proto.pick=function " + className + "_pick(" + args + "){var a=[],b=[],c=this.offset");
+-      for (var i = 0; i < dimension; ++i) {
+-        code.push("if(typeof i" + i + "==='number'&&i" + i + ">=0){c=(c+this.stride[" + i + "]*i" + i + ")|0}else{a.push(this.shape[" + i + "]);b.push(this.stride[" + i + "])}");
++      return new NdarrayGenericView(this.dtype, a.length, this.data, a, b, c);
++    };
++    function compileConstructor(dtype, dimension) {
++      if (dimension === -1) {
++        return function construct_nil(a) {
++          return new NdarrayNilView(dtype, a);
++        };
++      } else if (dimension === 0) {
++        return function construct_scalar(a, b, c, d) {
++          return new NdarrayScalarView(dtype, a, d);
++        };
+       }
+-      code.push("var ctor=CTOR_LIST[a.length+1];return ctor(this.data,a,b,c)}");
+-      code.push("return function construct_" + className + "(data,shape,stride,offset){return new " + className + "(data," + indices.map(function(i2) {
+-        return "shape[" + i2 + "]";
+-      }).join(",") + "," + indices.map(function(i2) {
+-        return "stride[" + i2 + "]";
+-      }).join(",") + ",offset)}");
+-      var procedure = new Function("CTOR_LIST", "ORDER", code.join("\n"));
+-      return procedure(CACHED_CONSTRUCTORS[dtype], order);
++      return function construct_generic(data, shape, stride, offset) {
++        return new NdarrayGenericView(dtype, dimension, data, shape, stride, offset);
++      };
+     }
+     function arrayDType(data) {
+       if (isBuffer(data)) {
