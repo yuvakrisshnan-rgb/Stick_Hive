@@ -27,6 +27,7 @@ import type {
 } from "@/lib/cart/types";
 
 import type { ContourPoint } from "@/lib/custom-sticker/contour";
+import type { BackgroundRemovalPrecision } from "@/lib/custom-sticker/background-removal";
 
 import SelectionToolbar from "./selection-toolbar";
 import TextStylePanel from "./text-style-panel";
@@ -99,6 +100,9 @@ type StickerCanvasProps = {
   onRestoreOriginal: () => void;
   isDetectingContour: boolean;
   isRemovingBackground: boolean;
+  bgRemovalPrecision: BackgroundRemovalPrecision;
+  onBgRemovalPrecisionChange: (precision: BackgroundRemovalPrecision) => void;
+  onRerunBackgroundRemovalML: () => void;
 };
 
 // ============================================================================
@@ -650,6 +654,9 @@ export default function StickerCanvas({
   onRestoreOriginal,
   isDetectingContour,
   isRemovingBackground,
+  bgRemovalPrecision,
+  onBgRemovalPrecisionChange,
+  onRerunBackgroundRemovalML,
 }: StickerCanvasProps) {
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const nodeRefs = useRef<Record<string, Konva.Node>>({});
@@ -1215,6 +1222,9 @@ export default function StickerCanvas({
             onRemoveBackground={onRemoveBackground}
             onRestoreOriginal={onRestoreOriginal}
             onClose={() => onSelectLayer(null)}
+            bgRemovalPrecision={bgRemovalPrecision}
+            onBgRemovalPrecisionChange={onBgRemovalPrecisionChange}
+            onRerunBackgroundRemovalML={onRerunBackgroundRemovalML}
           />
         </div>
       )}

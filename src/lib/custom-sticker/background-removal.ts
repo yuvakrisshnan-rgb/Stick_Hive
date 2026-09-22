@@ -16,23 +16,52 @@
 // ============================================================================
 
 import { DEFAULT_MAX_HOLE_AREA_FRACTION, closeSmallHolesInImageData } from "./mask-cleanup";
+import { postProcessAlphaMask } from "./mask-postprocess";
 
 // --------------------------------------------------------------------------
 // ML BACKGROUND REMOVAL (@imgly/background-removal)
 // --------------------------------------------------------------------------
+//
+// @imgly/background-removal ships the same isnet architecture in three
+// weight-precision variants (checked node_modules/@imgly/background-
+// removal/README.md and dist/src/schema.d.ts directly rather than
+// assuming): "isnet_quint8" (~40MB, 8-bit quantized - the smallest/
+// fastest, "sometimes shows some artifacts" per the library's own docs),
+// "isnet_fp16" (~80MB, the library's own documented DEFAULT), and "isnet"
+// (full fp32 precision, largest/slowest, no quantization rounding error).
+//
+// This file was overriding the library's own default down to the
+// quantized "isnet_quint8" variant unconditionally - the fast/small
+// option, not a neutral default - which is exactly the "leaving quality
+// on the table" the precision toggle below addresses. Note there is no
+// separate "higher output resolution" lever available: the isnet model's
+// input layer is a fixed 1024x1024 (confirmed via the compiled bundle),
+// identical across all three variants - the only quality lever this
+// library exposes is weight precision, not spatial resolution.
+
+export type BackgroundRemovalPrecision = "fast" | "high";
+
+const MODEL_BY_PRECISION: Record<BackgroundRemovalPrecision, "isnet_quint8" | "isnet"> = {
+  fast: "isnet_quint8",
+  high: "isnet",
+};
 
 /**
  * Removes the background from an image using an in-browser ML segmentation
  * model (WebAssembly, runs entirely client-side — no upload to a server).
  *
- * The "isnet_quint8" model is the smallest/quantized variant to keep the
- * one-time model download closer to the low end of the ~10-80MB range.
- * The browser caches the model after first use, so this cost is paid once
- * per device, not per upload.
- *
  * @param source - a data URL, object URL, or remote URL for the image.
  * @param onProgress - optional callback, fraction 0-1, for a loading UI.
  *   Fires for both the (first-time) model download and inference.
+ * @param options.precision - "fast" (default, isnet_quint8 - smaller
+ *   download, quicker inference) or "high" (isnet, full precision - a
+ *   larger one-time model download and a few extra seconds of inference,
+ *   for cleaner edges on hard subjects like hair or reflective glass).
+ *   The browser caches whichever model(s) get used, per device, not per
+ *   upload.
+ * @param options.postProcess - alpha-mask cleanup (erode, feather, edge
+ *   color decontamination — see mask-postprocess.ts). Defaults to on;
+ *   pass false to get the model's raw output for comparison/testing.
  * @returns a PNG data URL with the background made transparent.
  * @throws if the model fails to load or segmentation fails (e.g. no WASM
  *   support, blocked network request to the model CDN) — callers should
@@ -42,23 +71,43 @@ import { DEFAULT_MAX_HOLE_AREA_FRACTION, closeSmallHolesInImageData } from "./ma
 export async function removeBackgroundML(
   source: string,
   onProgress?: (fraction: number) => void,
+  options?: {
+    precision?: BackgroundRemovalPrecision;
+    postProcess?: boolean;
+  },
 ): Promise<string> {
+  const precision = options?.precision ?? "fast";
+  const shouldPostProcess = options?.postProcess ?? true;
+
   const { removeBackground } = await import("@imgly/background-removal");
 
   const resultBlob = await removeBackground(source, {
-    model: "isnet_quint8",
+    model: MODEL_BY_PRECISION[precision],
     output: { format: "image/png" },
     progress: (_key, current, total) => {
       if (total > 0) onProgress?.(Math.min(1, current / total));
     },
   });
 
-  return new Promise<string>((resolve, reject) => {
+  const resultDataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(new Error("Unable to read background-removed image"));
     reader.readAsDataURL(resultBlob);
   });
+
+  if (!shouldPostProcess) {
+    return resultDataUrl;
+  }
+
+  try {
+    return await postProcessAlphaMask(resultDataUrl, source);
+  } catch (postProcessError) {
+    // Mask cleanup is a refinement pass, not a required step - the raw
+    // model output is still a usable cutout on its own.
+    console.warn("Alpha mask post-processing failed, using raw model output:", postProcessError);
+    return resultDataUrl;
+  }
 }
 
 // Matches contour.ts's ALPHA_THRESHOLD — both need to agree on what counts

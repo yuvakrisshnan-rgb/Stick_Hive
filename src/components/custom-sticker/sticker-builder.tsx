@@ -21,7 +21,12 @@ import {
 } from "./sticker-canvas";
 
 import { detectImageContour } from "@/lib/custom-sticker/contour";
-import { removeSimpleBackground, removeBackgroundML, cleanupBackgroundHoles } from "@/lib/custom-sticker/background-removal";
+import {
+  removeSimpleBackground,
+  removeBackgroundML,
+  cleanupBackgroundHoles,
+  type BackgroundRemovalPrecision,
+} from "@/lib/custom-sticker/background-removal";
 import { flipImageHorizontal } from "@/lib/custom-sticker/image-transform";
 import { DEFAULT_STICKER_FONT } from "@/lib/custom-sticker/fonts";
 
@@ -333,12 +338,28 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   const [uploadStatusMessage, setUploadStatusMessage] = useState(
     "Preparing image…",
   );
+  // Surfaces the automatic ML background-removal failure the previous
+  // silent catch (console.warn only) left invisible to the user - a real,
+  // non-crashing rejection that nonetheless left them with an opaque photo
+  // and zero explanation. Tracks which layer it's about so the "Open
+  // Manual Eraser" action opens the eraser for the right one.
+  const [backgroundRemovalNotice, setBackgroundRemovalNotice] = useState<{
+    layerId: string;
+  } | null>(null);
   const [detectingContourLayerId, setDetectingContourLayerId] = useState<
     string | null
   >(null);
   const [removingBackgroundLayerId, setRemovingBackgroundLayerId] = useState<
     string | null
   >(null);
+
+  // Surfaced as a toggle right next to the re-run action in the Image Style
+  // panel (not buried in settings) — the automatic pass on upload always
+  // stays on the fast/default model regardless of this, matching the "keep
+  // the current fast path as default" requirement; this only affects an
+  // explicit user-triggered re-run.
+  const [bgRemovalPrecision, setBgRemovalPrecision] =
+    useState<BackgroundRemovalPrecision>("fast");
 
   function triggerAddImage() {
     uploadModeRef.current = { type: "add" };
@@ -362,6 +383,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
     event.target.value = "";
 
     setUploadError("");
+    setBackgroundRemovalNotice(null);
 
     const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
 
@@ -398,6 +420,11 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
       // original upload untouched rather than blocking the user.
       let processedImage = base64Image;
       let autoBackgroundRemoved = false;
+      // Was genuinely caught before (no crash) but silently - only a
+      // console.warn, nothing the user could see. This is what actually
+      // surfaces it now: a visible banner routing straight to the manual
+      // eraser, set further below once the layer this is about exists.
+      let backgroundRemovalFailed = false;
 
       try {
         setUploadStatusMessage("Removing background…");
@@ -427,6 +454,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
           "Automatic background removal failed, using original image:",
           backgroundRemovalError,
         );
+        backgroundRemovalFailed = true;
       }
 
       setUploadStatusMessage("Detecting outline…");
@@ -453,6 +481,10 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
         );
 
         detectContourForLayer(mode.layerId, processedImage);
+
+        if (backgroundRemovalFailed) {
+          setBackgroundRemovalNotice({ layerId: mode.layerId });
+        }
       } else {
         const newLayer: StickerImageLayer = {
           id: createId(),
@@ -472,6 +504,10 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
         setSelectedLayerId(newLayer.id);
 
         detectContourForLayer(newLayer.id, processedImage);
+
+        if (backgroundRemovalFailed) {
+          setBackgroundRemovalNotice({ layerId: newLayer.id });
+        }
       }
     } catch (error) {
       setUploadError("Unable to process image.");
@@ -528,6 +564,75 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
           "The background could not be separated cleanly. Try a transparent PNG or a simpler background.",
         );
       }
+
+      applyLayers(
+        (previous) =>
+          previous.map((candidate) =>
+            candidate.id === layerId && candidate.type === "image"
+              ? {
+                  ...candidate,
+                  src: processedSrc,
+                  originalSrc,
+                  contourPoints,
+                  backgroundRemoved: true,
+                }
+              : candidate,
+          ),
+        true,
+      );
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to remove the background.",
+      );
+      console.error(error);
+    } finally {
+      setRemovingBackgroundLayerId((current) =>
+        current === layerId ? null : current,
+      );
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // RE-RUN ML BACKGROUND REMOVAL (explicit, user-triggered) — distinct from
+  // handleRemoveBackground above, which is the dependency-free flood-fill
+  // fallback for when the automatic ML pass on upload didn't produce a
+  // usable contour. This re-runs the REAL model (@imgly/background-
+  // removal) against the original upload, honoring the precision toggle -
+  // this is the actual "high precision" action the toggle exists for.
+  // --------------------------------------------------------------------------
+
+  async function handleRerunBackgroundRemovalML(layerId: string) {
+    const layer = layersRef.current.find(
+      (candidate): candidate is StickerImageLayer =>
+        candidate.id === layerId && candidate.type === "image",
+    );
+
+    if (!layer) return;
+
+    setUploadError("");
+    setRemovingBackgroundLayerId(layerId);
+
+    try {
+      const originalSrc = layer.originalSrc ?? layer.src;
+
+      let processedSrc = await removeBackgroundML(
+        originalSrc,
+        undefined,
+        { precision: bgRemovalPrecision },
+      );
+
+      try {
+        processedSrc = await cleanupBackgroundHoles(processedSrc);
+      } catch (holeCleanupError) {
+        console.warn(
+          "Background hole cleanup failed, using uncleaned result:",
+          holeCleanupError,
+        );
+      }
+
+      const contourPoints = await detectImageContour(processedSrc);
 
       applyLayers(
         (previous) =>
@@ -637,6 +742,9 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
     );
 
     setSelectedLayerId((current) => (current === id ? null : current));
+    setBackgroundRemovalNotice((current) =>
+      current?.layerId === id ? null : current,
+    );
   }
 
   function duplicateLayer(id: string) {
@@ -993,7 +1101,10 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
             onFlipSelected={handleFlipSelected}
             onDeleteSelected={handleDeleteSelected}
             onToggleLockSelected={handleToggleLockSelected}
-            onOpenEraser={() => setEraserOpen(true)}
+            onOpenEraser={() => {
+              setEraserOpen(true);
+              setBackgroundRemovalNotice(null);
+            }}
             onReplaceClick={() =>
               selectedLayer && triggerReplaceImage(selectedLayer.id)
             }
@@ -1005,6 +1116,11 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
             }
             isDetectingContour={detectingContourLayerId === selectedLayerId}
             isRemovingBackground={removingBackgroundLayerId === selectedLayerId}
+            bgRemovalPrecision={bgRemovalPrecision}
+            onBgRemovalPrecisionChange={setBgRemovalPrecision}
+            onRerunBackgroundRemovalML={() =>
+              selectedLayer && handleRerunBackgroundRemovalML(selectedLayer.id)
+            }
           />
 
           {layers.length === 0 && (
@@ -1018,6 +1134,30 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
             <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">
               {uploadError}
             </p>
+          )}
+
+          {backgroundRemovalNotice && (
+            <div
+              role="status"
+              className="mt-4 flex flex-col items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center sm:flex-row sm:justify-between sm:text-left"
+            >
+              <p className="text-xs font-semibold text-amber-900">
+                Background removal isn&apos;t available right now — use the
+                eraser to remove it manually.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLayerId(backgroundRemovalNotice.layerId);
+                  setEraserOpen(true);
+                  setBackgroundRemovalNotice(null);
+                }}
+                className="shrink-0 rounded-full bg-amber-900 px-4 py-2 text-xs font-bold text-white transition hover:opacity-90"
+              >
+                Open Manual Eraser
+              </button>
+            </div>
           )}
 
           {isUploading && (

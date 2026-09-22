@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
-import { ImageIcon, RefreshCw, RotateCcw, WandSparkles, X } from "lucide-react";
+import { ImageIcon, RefreshCw, RotateCcw, Sparkles, WandSparkles, X } from "lucide-react";
 
 import type { StickerImageLayer } from "@/lib/cart/types";
+import type { BackgroundRemovalPrecision } from "@/lib/custom-sticker/background-removal";
 
 // ============================================================================
 // IMAGE STYLE PANEL — floating, top-right of the canvas when an image layer
@@ -26,6 +27,9 @@ export default function ImageStylePanel({
   onRemoveBackground,
   onRestoreOriginal,
   onClose,
+  bgRemovalPrecision,
+  onBgRemovalPrecisionChange,
+  onRerunBackgroundRemovalML,
 }: {
   layer: StickerImageLayer;
   onReplaceClick: () => void;
@@ -38,6 +42,9 @@ export default function ImageStylePanel({
   /** Hides the panel only - deselecting, same as clicking empty canvas or
    *  the pill toolbar disappearing. Never deletes/resets the layer. */
   onClose: () => void;
+  bgRemovalPrecision: BackgroundRemovalPrecision;
+  onBgRemovalPrecisionChange: (precision: BackgroundRemovalPrecision) => void;
+  onRerunBackgroundRemovalML: () => void;
 }) {
   // Escape dismiss only - see text-style-panel.tsx's matching comment for
   // why a generic outside-click listener isn't used here: it would fire on
@@ -184,6 +191,82 @@ export default function ImageStylePanel({
           </button>
         )}
       </div>
+
+      {/* ==================================================================
+          AI BACKGROUND REMOVAL — the precision toggle lives right next to
+          the action that uses it (not buried in a settings menu), and only
+          affects this explicit re-run, not the automatic fast pass that
+          already ran on upload.
+      ================================================================== */}
+
+      {layer.originalSrc && (
+        <div className="mt-3 rounded-2xl border border-black/5 bg-cream/60 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-bold text-black/70">
+              AI Background Removal
+            </p>
+
+            <div className="flex items-center gap-1 rounded-full bg-white p-0.5">
+              <button
+                type="button"
+                onClick={() => onBgRemovalPrecisionChange("fast")}
+                className={`
+                  rounded-full
+                  px-2.5
+                  py-1
+                  text-[10px]
+                  font-bold
+                  transition
+
+                  ${
+                    bgRemovalPrecision === "fast"
+                      ? "bg-black text-white"
+                      : "text-black/50 hover:bg-black/5"
+                  }
+                `}
+              >
+                Fast
+              </button>
+              <button
+                type="button"
+                onClick={() => onBgRemovalPrecisionChange("high")}
+                className={`
+                  rounded-full
+                  px-2.5
+                  py-1
+                  text-[10px]
+                  font-bold
+                  transition
+
+                  ${
+                    bgRemovalPrecision === "high"
+                      ? "bg-black text-white"
+                      : "text-black/50 hover:bg-black/5"
+                  }
+                `}
+              >
+                High precision
+              </button>
+            </div>
+          </div>
+
+          <p className="mt-1.5 text-[10px] leading-relaxed text-black/45">
+            {bgRemovalPrecision === "high"
+              ? "Uses the full-precision model - cleaner edges on hair/glass, takes a few extra seconds."
+              : "Uses the fast model - good for most photos, quickest result."}
+          </p>
+
+          <button
+            type="button"
+            onClick={onRerunBackgroundRemovalML}
+            disabled={isRemovingBackground}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-black px-3 py-2 text-[11px] font-bold text-white transition hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Sparkles size={13} />
+            {isRemovingBackground ? "Re-running…" : "Re-run AI Background Removal"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Circle, Square, Undo2, X } from "lucide-react";
+import { Circle, Eraser, Minus, Plus, Square, Undo2, Wand2, X } from "lucide-react";
 
 // ============================================================================
-// MANUAL IMAGE ERASER (Task 5)
+// MANUAL IMAGE ERASER
 // ============================================================================
 // The Smart Selection (automatic ML background removal, plus the simpler
 // flood-fill "Make Die-cut Ready" button) is AI-only - there was no manual
@@ -14,14 +14,34 @@ import { Circle, Square, Undo2, X } from "lucide-react";
 // alternative: a plain HTML5 canvas (not Konva - this only needs pointer-
 // driven pixel erasing on one static image, not the shared drag/resize/
 // rotate/snap machinery sticker-canvas.tsx already owns) with a brush the
-// user drags across the image; erased pixels become transparent via
-// globalCompositeOperation="destination-out", the same technique any
-// raster image editor's eraser tool uses.
+// user drags across the image.
+//
+// Three tools, not just hard erase:
+//   - Erase: full-opacity destination-out, for clean cutouts.
+//   - Soft Erase: destination-out with a radial-gradient brush (opaque
+//     center, transparent edge) - for feathering by hand where the AI left
+//     a hard or blurry edge, without switching to a different app.
+//   - Restore: paints back from a pristine copy of the image captured on
+//     load (source-over, clipped to the brush shape), independent of the
+//     undo stack - fixes an over-erased spot without walking back through
+//     every stroke since.
+//
+// Zoom (CSS display size only - the canvas's own pixel buffer, and
+// therefore erase precision, stays at its native resolution) lets fine
+// detail work (hair, jewelry chains) happen at more screen-pixels per
+// image-pixel; getCanvasPoint already maps screen coordinates back through
+// canvas.getBoundingClientRect(), so scaling the canvas's CSS size needs no
+// other coordinate-math changes.
+// ============================================================================
 
 const MAX_DISPLAY_SIZE = 380;
 const BRUSH_SIZES = [12, 24, 40];
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4;
+const ZOOM_STEP = 0.5;
 
 type BrushShape = "round" | "square";
+type Tool = "erase" | "soft-erase" | "restore";
 
 export default function ImageEraserModal({
   imageSrc,
@@ -33,9 +53,27 @@ export default function ImageEraserModal({
   onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // A pristine, never-mutated copy of the loaded image, used by the
+  // Restore tool - independent of the undo stack, which only walks back
+  // through past strokes rather than always offering the true original.
+  const pristineCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const [ready, setReady] = useState(false);
   const [brushSize, setBrushSize] = useState(BRUSH_SIZES[1]);
   const [brushShape, setBrushShape] = useState<BrushShape>("round");
+  const [tool, setTool] = useState<Tool>("erase");
+  const [zoom, setZoom] = useState(1);
+  // Mirrors the canvas element's own width/height attributes (set once
+  // when the image loads) purely so the zoom-scaled CSS size below can be
+  // computed during render without reading canvasRef.current there - a
+  // ref read during render doesn't reliably trigger a re-render when it
+  // changes, the same reasoning behind strokeCount mirroring historyRef
+  // below.
+  const [canvasSize, setCanvasSize] = useState({
+    width: MAX_DISPLAY_SIZE,
+    height: MAX_DISPLAY_SIZE,
+  });
   const [hasErased, setHasErased] = useState(false);
   // historyRef itself is never read during render (a ref read there
   // wouldn't reliably trigger a re-render when it changes) - this count
@@ -65,37 +103,77 @@ export default function ImageEraserModal({
         MAX_DISPLAY_SIZE / Math.max(image.naturalWidth, image.naturalHeight),
       );
 
-      canvas.width = Math.round(image.naturalWidth * scale);
-      canvas.height = Math.round(image.naturalHeight * scale);
+      const width = Math.round(image.naturalWidth * scale);
+      const height = Math.round(image.naturalHeight * scale);
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.width = width;
+      canvas.height = height;
 
-      historyRef.current = [ctx.getImageData(0, 0, canvas.width, canvas.height)];
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+
+      const pristine = document.createElement("canvas");
+      pristine.width = width;
+      pristine.height = height;
+      pristine.getContext("2d")?.drawImage(image, 0, 0, width, height);
+      pristineCanvasRef.current = pristine;
+
+      historyRef.current = [ctx.getImageData(0, 0, width, height)];
       setStrokeCount(1);
+      setCanvasSize({ width, height });
       setReady(true);
     };
     image.src = imageSrc;
   }, [imageSrc]);
 
   // --------------------------------------------------------------------------
-  // ERASE STROKE
+  // ERASE / SOFT-ERASE / RESTORE STROKE
   // --------------------------------------------------------------------------
 
-  function eraseAt(ctx: CanvasRenderingContext2D, x: number, y: number) {
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.fillStyle = "rgba(0,0,0,1)";
-
+  function brushPath(ctx: CanvasRenderingContext2D, x: number, y: number) {
+    ctx.beginPath();
     if (brushShape === "round") {
-      ctx.beginPath();
       ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
-      ctx.fill();
     } else {
-      ctx.fillRect(x - brushSize / 2, y - brushSize / 2, brushSize, brushSize);
+      ctx.rect(x - brushSize / 2, y - brushSize / 2, brushSize, brushSize);
     }
   }
 
-  function eraseLine(
+  function strokeAt(ctx: CanvasRenderingContext2D, x: number, y: number) {
+    if (tool === "restore") {
+      const pristine = pristineCanvasRef.current;
+      if (!pristine) return;
+
+      ctx.save();
+      brushPath(ctx, x, y);
+      ctx.clip();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.drawImage(pristine, 0, 0);
+      ctx.restore();
+      return;
+    }
+
+    ctx.globalCompositeOperation = "destination-out";
+
+    if (tool === "soft-erase") {
+      // A radial gradient alpha brush (opaque center -> transparent edge)
+      // feathers by hand, rather than only ever cutting a hard boundary -
+      // overlapping strokes accumulate partial transparency naturally,
+      // the same way a soft eraser works in any raster editor.
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, brushSize / 2);
+      gradient.addColorStop(0, "rgba(0,0,0,0.85)");
+      gradient.addColorStop(0.6, "rgba(0,0,0,0.5)");
+      gradient.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gradient;
+    } else {
+      ctx.fillStyle = "rgba(0,0,0,1)";
+    }
+
+    brushPath(ctx, x, y);
+    ctx.fill();
+  }
+
+  function strokeLine(
     ctx: CanvasRenderingContext2D,
     from: { x: number; y: number },
     to: { x: number; y: number },
@@ -105,7 +183,7 @@ export default function ImageEraserModal({
 
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      eraseAt(ctx, from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+      strokeAt(ctx, from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
     }
   }
 
@@ -134,7 +212,7 @@ export default function ImageEraserModal({
     canvas.setPointerCapture(event.pointerId);
     isDrawingRef.current = true;
     lastPointRef.current = point;
-    eraseAt(ctx, point.x, point.y);
+    strokeAt(ctx, point.x, point.y);
     setHasErased(true);
   }
 
@@ -146,7 +224,7 @@ export default function ImageEraserModal({
     if (!ctx || !point) return;
 
     if (lastPointRef.current) {
-      eraseLine(ctx, lastPointRef.current, point);
+      strokeLine(ctx, lastPointRef.current, point);
     }
     lastPointRef.current = point;
   }
@@ -160,6 +238,10 @@ export default function ImageEraserModal({
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
 
+    // One continuous drag (pointerdown -> pointerup) is one undo step -
+    // fine enough that a slip doesn't cost more than the stroke that
+    // caused it, coarse enough that undoing a real touch-up doesn't take
+    // dozens of presses.
     historyRef.current = [
       ...historyRef.current,
       ctx.getImageData(0, 0, canvas.width, canvas.height),
@@ -206,7 +288,8 @@ export default function ImageEraserModal({
         </p>
 
         <div
-          className="mt-4 overflow-hidden rounded-2xl bg-[repeating-conic-gradient(#e5e5e5_0%_25%,#ffffff_0%_50%)] bg-[length:16px_16px]"
+          ref={wrapperRef}
+          className="mt-4 max-h-[60vh] overflow-auto rounded-2xl bg-[repeating-conic-gradient(#e5e5e5_0%_25%,#ffffff_0%_50%)] bg-[length:16px_16px]"
           style={{ touchAction: "none" }}
         >
           <canvas
@@ -216,7 +299,11 @@ export default function ImageEraserModal({
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
             className="mx-auto block cursor-crosshair"
-            style={{ touchAction: "none", maxWidth: "100%" }}
+            style={{
+              touchAction: "none",
+              width: canvasSize.width * zoom,
+              height: canvasSize.height * zoom,
+            }}
           />
         </div>
 
@@ -226,7 +313,77 @@ export default function ImageEraserModal({
           </p>
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3">
+        {/* Zoom, for fine detail work (hair, jewelry chains) */}
+        <div className="mt-3 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))}
+            disabled={zoom <= MIN_ZOOM}
+            aria-label="Zoom out"
+            className="flex size-8 items-center justify-center rounded-lg border border-black/10 transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Minus size={13} />
+          </button>
+          <span className="w-11 text-center text-xs font-bold tabular-nums">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))}
+            disabled={zoom >= MAX_ZOOM}
+            aria-label="Zoom in"
+            className="flex size-8 items-center justify-center rounded-lg border border-black/10 transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Plus size={13} />
+          </button>
+        </div>
+
+        {/* Tool: Erase / Soft Erase / Restore */}
+        <div className="mt-3 grid grid-cols-3 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setTool("erase")}
+            title="Erase (hard edge)"
+            className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-[11px] font-bold transition ${
+              tool === "erase"
+                ? "border-hive-yellow bg-hive-yellow/15"
+                : "border-black/10 hover:bg-cream"
+            }`}
+          >
+            <Eraser size={14} />
+            Erase
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTool("soft-erase")}
+            title="Soft erase (feathered edge)"
+            className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-[11px] font-bold transition ${
+              tool === "soft-erase"
+                ? "border-hive-yellow bg-hive-yellow/15"
+                : "border-black/10 hover:bg-cream"
+            }`}
+          >
+            <Wand2 size={14} />
+            Soft
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTool("restore")}
+            title="Restore (paint back from the original)"
+            className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-[11px] font-bold transition ${
+              tool === "restore"
+                ? "border-hive-yellow bg-hive-yellow/15"
+                : "border-black/10 hover:bg-cream"
+            }`}
+          >
+            <Undo2 size={14} />
+            Restore
+          </button>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5">
             <button
               type="button"

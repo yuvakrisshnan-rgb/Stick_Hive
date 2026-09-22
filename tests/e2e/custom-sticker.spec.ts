@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import sharp from "sharp";
 
 test.describe("Custom sticker builder", () => {
   test("loads the canvas editor", async ({ page }) => {
@@ -70,5 +71,38 @@ test.describe("Custom sticker builder", () => {
     });
 
     await expect(page.getByText(/png, jpg, or webp/i)).toBeVisible();
+  });
+
+  test("background-removal failure shows a fallback message and routes to the manual eraser", async ({ page }) => {
+    // Forces the real failure path deterministically (blocking @imgly/
+    // background-removal's model CDN makes its fetch reject) rather than
+    // relying on the separately-tracked CSP/'unsafe-eval' issue to
+    // reproduce on its own - this test is about the fallback UI, not that
+    // specific root cause, and must pass regardless of whether that issue
+    // is ever fixed.
+    await page.route("https://staticimgly.com/**", (route) => route.abort());
+
+    await page.goto("/custom-sticker");
+
+    const buffer = await sharp({
+      create: { width: 64, height: 64, channels: 4, background: { r: 200, g: 50, b: 50, alpha: 1 } },
+    })
+      .png()
+      .toBuffer();
+
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.setInputFiles({ name: "test.png", mimeType: "image/png", buffer });
+
+    // The old, silent behavior was a console.warn only - nothing visible.
+    // This is the actual regression test: a real user must see this.
+    await expect(
+      page.getByText(/Background removal isn't available right now/i),
+    ).toBeVisible({ timeout: 20000 });
+
+    const openEraserButton = page.getByRole("button", { name: /Open Manual Eraser/i });
+    await expect(openEraserButton).toBeVisible();
+    await openEraserButton.click();
+
+    await expect(page.getByText(/Manual Erase/i)).toBeVisible();
   });
 });
