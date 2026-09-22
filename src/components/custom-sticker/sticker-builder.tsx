@@ -39,7 +39,11 @@ import type {
 
 import type { StickerSize } from "@/lib/product-data";
 
-const DEFAULT_CANVAS_BACKGROUND = "#e8e8e8";
+// White, matching the print area's pre-existing baseline look - the
+// viewport chrome behind it (sticker-canvas.tsx's fixed "#e8e8e8" Rect) is
+// a separate, non-user-editable concern; this constant is the artboard's
+// own starting background, scoped to the print card/die-cut backing only.
+const DEFAULT_CANVAS_BACKGROUND = "#ffffff";
 const DEFAULT_BORDER_WIDTH = 10;
 
 // ============================================================================

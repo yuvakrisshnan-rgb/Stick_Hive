@@ -869,7 +869,13 @@ export default function StickerCanvas({
         >
           <Layer>
             {/* ================================================================
-                BACKGROUND
+                VIEWPORT BACKDROP — the editor chrome behind the print card,
+                NOT the sticker's own background. Fixed, not user-editable:
+                the "Background" rail control scopes to the print
+                area/die-cut backing below, never this outer viewport (this
+                was the actual bug - canvasBackgroundColor used to be wired
+                here instead, painting the whole Stage rather than the
+                artboard).
             ================================================================ */}
 
             <Rect
@@ -877,12 +883,13 @@ export default function StickerCanvas({
               y={0}
               width={STAGE_SIZE}
               height={STAGE_SIZE}
-              fill={canvasBackgroundColor}
+              fill="#e8e8e8"
               listening={false}
             />
 
             {/* ================================================================
-                PRINT AREA (white working surface)
+                PRINT AREA (the sticker's own working surface/background -
+                this is "the canvas" the Background control actually paints)
             ================================================================ */}
 
             <Rect
@@ -890,7 +897,7 @@ export default function StickerCanvas({
               y={CANVAS_MARGIN}
               width={PRINT_AREA_SIZE}
               height={PRINT_AREA_SIZE}
-              fill="#ffffff"
+              fill={canvasBackgroundColor}
               cornerRadius={16}
               shadowColor="#000000"
               shadowOpacity={0.06}
@@ -899,14 +906,15 @@ export default function StickerCanvas({
             />
 
             {/* ================================================================
-                DIE-CUT WHITE BACKING (behind artwork)
+                DIE-CUT BACKING (behind artwork) — same scope as above, for
+                the Die-cut shape's own boundary once that shape is active.
             ================================================================ */}
 
             {shape === "Die-cut" && whiteBackingPoints && (
               <Line
                 points={flattenPoints(whiteBackingPoints)}
                 closed
-                fill="#ffffff"
+                fill={canvasBackgroundColor}
                 listening={false}
               />
             )}
@@ -1190,6 +1198,7 @@ export default function StickerCanvas({
             layer={selectedLayer}
             onChange={(updates) => onUpdateLayer(selectedLayer.id, updates)}
             onCommitHistory={onCommitHistory}
+            onClose={() => onSelectLayer(null)}
           />
         </div>
       )}
@@ -1205,6 +1214,7 @@ export default function StickerCanvas({
             isRemovingBackground={isRemovingBackground}
             onRemoveBackground={onRemoveBackground}
             onRestoreOriginal={onRestoreOriginal}
+            onClose={() => onSelectLayer(null)}
           />
         </div>
       )}

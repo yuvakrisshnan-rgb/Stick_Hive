@@ -1,6 +1,7 @@
 "use client";
 
-import { ImageIcon, RefreshCw, RotateCcw, WandSparkles } from "lucide-react";
+import { useEffect } from "react";
+import { ImageIcon, RefreshCw, RotateCcw, WandSparkles, X } from "lucide-react";
 
 import type { StickerImageLayer } from "@/lib/cart/types";
 
@@ -24,6 +25,7 @@ export default function ImageStylePanel({
   isRemovingBackground,
   onRemoveBackground,
   onRestoreOriginal,
+  onClose,
 }: {
   layer: StickerImageLayer;
   onReplaceClick: () => void;
@@ -33,7 +35,28 @@ export default function ImageStylePanel({
   isRemovingBackground: boolean;
   onRemoveBackground: () => void;
   onRestoreOriginal: () => void;
+  /** Hides the panel only - deselecting, same as clicking empty canvas or
+   *  the pill toolbar disappearing. Never deletes/resets the layer. */
+  onClose: () => void;
 }) {
+  // Escape dismiss only - see text-style-panel.tsx's matching comment for
+  // why a generic outside-click listener isn't used here: it would fire on
+  // the same pointerdown that starts dragging the selected shape, pressing
+  // a Transformer handle, or clicking the pill toolbar (all physically
+  // outside this panel's DOM node), deselecting mid-gesture. The pill
+  // toolbar itself (the precedent being matched) has no such listener -
+  // only Konva's own empty-canvas-click deselection.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div
       className="
@@ -48,11 +71,33 @@ export default function ImageStylePanel({
         shadow-[0_20px_50px_rgba(0,0,0,0.18)]
       "
     >
-      <div className="flex items-center gap-2">
-        <ImageIcon size={14} className="text-black/40" />
-        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-black/40">
-          Image Settings
-        </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ImageIcon size={14} className="text-black/40" />
+          <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-black/40">
+            Image Settings
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close panel"
+          title="Close panel"
+          className="
+            flex
+            size-6
+            items-center
+            justify-center
+            rounded-full
+            text-black/40
+            transition
+            hover:bg-black/5
+            hover:text-black
+          "
+        >
+          <X size={14} />
+        </button>
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2">

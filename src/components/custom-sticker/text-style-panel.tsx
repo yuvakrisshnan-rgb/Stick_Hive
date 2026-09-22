@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlignCenter,
   AlignLeft,
@@ -11,6 +11,7 @@ import {
   PenTool,
   Sparkles,
   Underline as UnderlineIcon,
+  X,
 } from "lucide-react";
 
 import { STICKER_FONTS } from "@/lib/custom-sticker/fonts";
@@ -184,16 +185,43 @@ export default function TextStylePanel({
   layer,
   onChange,
   onCommitHistory,
+  onClose,
 }: {
   layer: StickerTextLayer;
   onChange: (updates: Partial<StickerTextLayer>) => void;
   onCommitHistory: () => void;
+  /** Hides the panel only - deselecting, same as clicking empty canvas or
+   *  the pill toolbar disappearing. Never deletes/resets the layer. */
+  onClose: () => void;
 }) {
   const [fontMenuOpen, setFontMenuOpen] = useState(false);
   const hasStroke = Boolean(layer.strokeColor) && layer.strokeWidth > 0;
   const activeFont =
     STICKER_FONTS.find((font) => font.fontFamily === layer.fontFamily) ??
     STICKER_FONTS[0];
+
+  // Escape dismiss only - NOT a generic outside-click listener. The pill
+  // toolbar (this panel's own audited precedent) has no such listener
+  // either; it closes purely by deselecting, via the Konva stage's own
+  // empty-area click check (handleStageMouseDown in sticker-canvas.tsx),
+  // which already correctly distinguishes "clicked empty canvas" from
+  // "clicked/dragged a shape" or "clicked the pill toolbar/Transformer
+  // handles" using Konva's real hit-testing. A naive DOM-wide pointerdown
+  // listener can't replicate that distinction and would fire on the same
+  // pointerdown that starts dragging the selected shape or pressing a
+  // Transformer handle or a pill-toolbar button (all physically outside
+  // this panel's own DOM node), deselecting mid-gesture and breaking
+  // drag/resize/duplicate for anything selected while this panel is open.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   function apply(updates: Partial<StickerTextLayer>) {
     onChange(updates);
@@ -214,9 +242,31 @@ export default function TextStylePanel({
         shadow-[0_20px_50px_rgba(0,0,0,0.18)]
       "
     >
-      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-black/40">
-        Text Style
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-black/40">
+          Text Style
+        </p>
+
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close panel"
+          title="Close panel"
+          className="
+            flex
+            size-6
+            items-center
+            justify-center
+            rounded-full
+            text-black/40
+            transition
+            hover:bg-black/5
+            hover:text-black
+          "
+        >
+          <X size={14} />
+        </button>
+      </div>
 
       {/* Content */}
       <div className="mt-2">
