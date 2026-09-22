@@ -2,6 +2,7 @@ import { CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getD1, nowIso } from "../db/d1";
 import { getCurrentUser, isAdminUser } from "../auth/service";
 import { getS3BucketName, getS3Client } from "../storage/s3";
+import { rollbackOrphanedOrder, safeUpiPaymentDetails } from "./order-fault-handling";
 import {
   SIZE_PRICES,
   priceFor,
@@ -476,6 +477,7 @@ export async function createOrderFromCheckout(input: {
   let subtotal = 0;
   const finalizedKeys: string[] = [];
   const orderId = generateOrderId();
+  let orderPersisted = false;
 
   try {
     for (const item of input.items) {
@@ -598,6 +600,7 @@ export async function createOrderFromCheckout(input: {
           ),
       ),
     ]);
+    orderPersisted = true;
 
     const serializedOrder = {
       orderId,
@@ -625,6 +628,16 @@ export async function createOrderFromCheckout(input: {
         getS3Client().send(new DeleteObjectCommand({ Bucket: getS3BucketName(), Key: key })).catch(() => undefined),
       ),
     );
+    // The order row (and its items) were already committed to D1 before
+    // this error was thrown (e.g. getUpiPaymentDetails failing because
+    // required payment config is missing) - without this, that row is
+    // orphaned forever: the customer never received its ID, and it would
+    // otherwise sit in D1 as a permanent "awaiting_payment" ghost.
+    if (orderPersisted) {
+      await rollbackOrphanedOrder(getD1(), orderId).catch((cleanupError) => {
+        console.error(`Failed to roll back orphaned order ${orderId} after checkout error:`, cleanupError);
+      });
+    }
     throw error;
   }
 }
@@ -1034,9 +1047,20 @@ function serializeOrder(order: OrderDocument) {
           updatedAt: order.shippingDetails.updatedAt.toISOString(),
         }
       : undefined,
-    ...(order.paymentMethod === "upi"
-      ? { upiPayment: getUpiPaymentDetails(order.orderId, order.total, order.paymentAttempt ?? 1) }
-      : {}),
+    ...(() => {
+      if (order.paymentMethod !== "upi") return {};
+      // getUpiPaymentDetails throws if required config (e.g.
+      // STICKHIVE_UPI_ID) is missing. This runs on every read of every UPI
+      // order (getMyOrders, getMyOrder, the admin list/detail) - letting it
+      // throw here means one misconfigured/problem order takes down every
+      // other order in the same list. Degrade that one order's payment
+      // details instead of the whole read.
+      const result = safeUpiPaymentDetails(
+        () => getUpiPaymentDetails(order.orderId, order.total, order.paymentAttempt ?? 1),
+        (error) => console.error(`serializeOrder: failed to compute UPI payment details for order ${order.orderId}:`, error),
+      );
+      return result.ok ? { upiPayment: result.value } : { upiPaymentError: result.error };
+    })(),
   };
 }
 

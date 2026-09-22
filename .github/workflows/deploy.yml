@@ -14,10 +14,13 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
-    # One job, sequential steps: the build step is the gate. If it fails,
-    # the job stops there by default (GitHub Actions skips every later step
-    # once one fails, unless that step sets continue-on-error/if: always() -
-    # neither is used here) - the deploy step is never reached.
+    # One job, sequential steps: the config check and the build step are
+    # both gates. If either fails, the job stops there by default (GitHub
+    # Actions skips every later step once one fails, unless that step sets
+    # continue-on-error/if: always() - neither is used here) - the deploy
+    # step is never reached. The config check runs first and needs no
+    # node_modules (scripts/check-required-config.mjs is dependency-free),
+    # so a missing required var fails fast, before install/build even run.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +30,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Check required production config
+        run: npm run check:config
 
       - name: Install dependencies
         run: npm ci

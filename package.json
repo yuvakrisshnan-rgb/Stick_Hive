@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "storage:local-cors": "node scripts/configure-local-s3-cors.mjs",
+    "check:config": "node scripts/check-required-config.mjs",
     "admin:path": "node scripts/show-admin-path.mjs",
     "products:validate": "node scripts/seed-products.mjs validate",
     "products:seed": "node scripts/seed-products.mjs seed",
