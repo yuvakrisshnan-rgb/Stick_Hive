@@ -981,6 +981,7 @@ function OrderSuccessContent() {
                     alt={`UPI payment QR for ₹${currentOrder.upiPayment.amount.toFixed(2)}`}
                     width={288}
                     height={288}
+                    unoptimized
                     className="size-64 rounded-xl md:size-72"
                   />
                 </div>
