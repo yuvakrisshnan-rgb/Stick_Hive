@@ -63,11 +63,13 @@
   // Non-sensitive config. AUTH_SECRET and RESEND_API_KEY are set via
   // `wrangler secret put` instead (not committed to the repo).
   //
-  // STICKHIVE_UPI_ID and AUTH_FROM_EMAIL are intentionally absent - no
-  // real UPI VPA or verified sender domain exists yet. Live UPI checkout
-  // will fail with "STICKHIVE_UPI_ID is not configured" until a real one
-  // is added here; OTP emails fall back to Resend's shared sandbox
-  // sender (onboarding@resend.dev) until AUTH_FROM_EMAIL is set.
+  // STICKHIVE_UPI_ID is the real merchant VPA UPI checkout pays into as of
+  // 2026-09-22 - scripts/check-required-config.mjs (run as the first step
+  // of deploy.yml) fails the deploy if this is ever unset again.
+  //
+  // AUTH_FROM_EMAIL is still intentionally absent - no verified sender
+  // domain exists yet, so OTP emails fall back to Resend's shared sandbox
+  // sender (onboarding@resend.dev) until it's set.
   //
   // PRODUCTS_SOURCE=d1: the remote products table (migrations/0006) has
   // been applied and seeded (194 rows, 107 active - see DEPLOY_CHECKLIST.md
@@ -82,6 +84,7 @@
   "vars": {
     "AUTH_DEBUG_OTP": "false",
     "STICKHIVE_ADMIN_EMAILS": "yuvakrisshnan@gmail.com",
+    "STICKHIVE_UPI_ID": "yuvakrisshnan-1@oksbi",
     "STICKHIVE_UPI_NAME": "Stick Hive",
     "PRODUCTS_SOURCE": "d1"
   }
