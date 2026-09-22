@@ -494,6 +494,16 @@ function TextLayerNode({
       strokeWidth={layer.strokeWidth ?? 0}
       fillAfterStrokeEnabled
       fontStyle={fontStyle}
+      // Fixed-width word-wrap ("word", Konva's default) collapses to zero
+      // renderable lines when a single unbreakable "word" (an emoji is one
+      // grapheme) measures wider than the box - there's no smaller
+      // substring to fall back to, so Konva's wrap algorithm gives up and
+      // produces nothing at all (confirmed: node.getHeight() === 0,
+      // node.textArr === [] for an 87.9px-wide emoji glyph in an 80px box).
+      // Text layers here are always single-line (plain <input>, no
+      // multi-line editor), so word-wrap was never an intentional feature -
+      // disabling it removes this failure mode without behavior loss.
+      wrap="none"
       textDecoration={layer.underline ? "underline" : ""}
       shadowColor={layer.shadow ? "#000000" : undefined}
       shadowBlur={layer.shadow ? 8 : 0}
