@@ -26,7 +26,7 @@ import { StickerImage } from "@/components/shop/sticker-image";
 /* CONFIGURATION                                                             */
 /* ========================================================================= */
 
-const TRENDING_COUNT = 8;
+const NEW_ARRIVALS_COUNT = 8;
 
 /*
  * Automatic horizontal scrolling speed.
@@ -38,51 +38,31 @@ const AUTO_SCROLL_SPEED = 0.75;
 
 
 /* ========================================================================= */
-/* GET TRENDING PRODUCTS                                                     */
+/* GET NEW ARRIVALS                                                          */
 /* ========================================================================= */
 
-// D1 products (backend/products/service.ts's toProduct()) always carry
-// labels: [] - there's no "trending" concept in the products table, so
-// this label match can only ever succeed against the static array. For
-// D1 data this always falls through to the fallback branch below (first
-// TRENDING_COUNT in-stock products) - the same thing that already
-// happened for the static array whenever fewer than TRENDING_COUNT
-// products were hand-labeled "trending". Preserved as-is rather than
-// invented a new D1 notion of "trending" that doesn't exist in the schema.
-function getTrendingProducts(products: Product[]): Product[] {
-  const trendingProducts = products.filter(
-    (product) => {
-      const labels = product.labels ?? [];
-
-      return (
-        product.inStock &&
-        labels.some(
-          (label) =>
-            label.toLowerCase() === "trending",
-        )
-      );
-    },
-  );
-
-  if (
-    trendingProducts.length >=
-    TRENDING_COUNT
-  ) {
-    return trendingProducts.slice(
-      0,
-      TRENDING_COUNT,
-    );
-  }
-
+// This section used to be labeled "Trending" and filtered on
+// product.labels containing "trending" - but D1 products
+// (backend/products/service.ts's toProduct()) always carry labels: [],
+// there's no trending/sales/views concept anywhere in the products table,
+// so that filter could never match real data and this always fell through
+// to "first N in-stock products" (i.e. newest-first, since
+// listActiveProducts() queries ORDER BY created_at DESC) - silently
+// re-labeled by whatever gets added next, not by any real signal.
+//
+// The section is now honestly called "New Arrivals" and this just does
+// that directly: newest in-stock products first. Sorting explicitly here
+// (rather than trusting caller order) so this stays correct even if a
+// future caller passes products in a different order.
+function getNewArrivals(products: Product[]): Product[] {
   return products
-    .filter(
-      (product) =>
-        product.inStock,
+    .filter((product) => product.inStock)
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime(),
     )
-    .slice(
-      0,
-      TRENDING_COUNT,
-    );
+    .slice(0, NEW_ARRIVALS_COUNT);
 }
 
 
@@ -108,7 +88,7 @@ export default function TrendingStickers({
 
   const products = useMemo(
     () =>
-      getTrendingProducts(allProducts),
+      getNewArrivals(allProducts),
     [allProducts],
   );
 
@@ -590,7 +570,7 @@ export default function TrendingStickers({
   return (
 
     <section
-      id="trending"
+      id="new-arrivals"
       className="
         relative
         overflow-hidden
@@ -881,7 +861,7 @@ function TrendingCard({
           {/* ============================================================= */}
 
           <Link
-            href={`/shop/${product.id}`}
+            href={`/shop?category=${encodeURIComponent(product.category)}`}
             draggable={false}
             className="
               relative
@@ -996,7 +976,7 @@ function TrendingCard({
 
 
                 <Link
-                  href={`/shop/${product.id}`}
+                  href={`/shop?category=${encodeURIComponent(product.category)}`}
                   draggable={false}
                   className="
                     mt-1

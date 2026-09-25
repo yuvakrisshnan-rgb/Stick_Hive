@@ -316,11 +316,11 @@ export default function Footer() {
 
 
               {/* IMPORTANT:
-                  Trending is on the HOME PAGE */}
+                  New Arrivals is on the HOME PAGE */}
 
               <FooterLink
-                href="/#trending"
-                label="Trending"
+                href="/#new-arrivals"
+                label="New Arrivals"
               />
 
 

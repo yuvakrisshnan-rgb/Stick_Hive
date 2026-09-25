@@ -6,7 +6,7 @@ Open items discovered or deliberately deferred during this session. Not a roadma
 
 Confirmed via `git diff` to be outside every line touched this session - not introduced by this work, just surfaced by linting the files it touched.
 
-- `src/components/shop/shop-catalog.tsx:196` - `setSearch(urlSearch)` called directly inside a bare `useEffect` (`react-hooks/set-state-in-effect`).
+- `src/components/shop/shop-catalog.tsx:314` (line shifted by the 2026-09-25 pagination/category-URL work below; same pre-existing issue) - `setSearch(urlSearch)` called directly inside a bare `useEffect` (`react-hooks/set-state-in-effect`). The two *new* state syncs added in that same file (`category` from `?category=`, and resetting pagination on filter change) use the render-time "adjust state" pattern instead, specifically to avoid adding more of this.
 - `src/components/custom-sticker/sticker-editor-shell.tsx:61` - `setSheetExpanded(true)` called directly inside a bare `useEffect`, same rule.
 - `src/components/checkout/customer-form.tsx:255,292` - two `@typescript-eslint/no-explicit-any` errors.
 - `src/components/cart/cart-drawer.tsx:541,610,916` - one `no-location-assign-relative-destination` warning (`window.location.href` for an internal nav - should be `useRouter().push()`), two `no-unused-expressions` warnings.
@@ -28,6 +28,12 @@ Confirmed via `git diff` to be outside every line touched this session - not int
 ## Wishlist: two parallel, mostly-dead implementations
 
 `src/components/wishlist/wishlist-provider.tsx` (server-synced via `/api/wishlist` for signed-in users, raw ids with no product validation) is the one actually used anywhere (`useWishlist()`, wired into `/wishlist` and product pages). `src/components/shop/store-provider.tsx` has its own separate, complete `wishlist`/`toggleWishlist`/`isWishlisted`/`wishlistCount` implementation (validates against the product catalog, persists to its own `stickhive:wishlist` localStorage key) with **zero consumers anywhere in the app** (confirmed via grep) - found while fixing the D1-checkout issue, not touched per this session's "don't delete without flagging first" rule. Worth an explicit decision: delete the dead one from `store-provider.tsx` (smaller `ShopContextValue`, one less localStorage key silently written on every cart change), or decide it's actually meant to replace `wishlist-provider.tsx` and finish that migration instead.
+
+## R2 public image domain serves HTTP/1.1, not HTTP/2 (DNS/bucket change, not code)
+
+Confirmed via `curl -w "%{http_version}"` against `pub-8a6c62ba68f94cc09c8327319bffa53c.r2.dev`: it's HTTP/1.1. Browsers cap concurrent connections per origin at ~6 under HTTP/1.1, so sticker images queue in batches of 6 behind a single shared origin on `/shop` - independent of the pagination fix (2026-09-25) that bounds how many images compete for those slots per page. A single warmed-up fetch of one image still took ~600ms TTFB on its own, so there's real per-request latency here too, not just queueing.
+
+Fix: route R2's public bucket through a custom domain on Cloudflare's own zone instead of the `*.r2.dev` dev domain - that would serve HTTP/2+ (or HTTP/3) and let images load in parallel instead of queuing. This is a Cloudflare dashboard/DNS + bucket-binding change (R2 bucket → custom domain, zone proxied), not application code - worth doing, but deliberately not bundled into the pagination fix.
 
 ## AI shopping assistant (Task 4 - not started)
 

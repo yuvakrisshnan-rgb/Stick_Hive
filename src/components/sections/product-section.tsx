@@ -112,7 +112,7 @@ export default function ProductSection({
               className="text-honey-orange"
             />
 
-            Trending Collection
+            New Arrivals
           </div>
 
           <h2
@@ -139,7 +139,7 @@ export default function ProductSection({
               text-black/60
             "
           >
-            Discover what&apos;s trending and explore
+            Fresh off the shelf — the newest
             sticker collections made for every kind
             of personality.
           </p>
@@ -147,7 +147,8 @@ export default function ProductSection({
       </div>
 
       {/* ================================================================ */}
-      {/* TRENDING STICKERS                                                  */}
+      {/* NEW ARRIVALS (component file/export names kept as TrendingStickers  */}
+      {/* to keep the diff scoped - only the user-facing copy changed)       */}
       {/* ================================================================ */}
 
       <TrendingStickers products={products} />

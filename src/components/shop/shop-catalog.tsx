@@ -123,6 +123,42 @@ const SORT_OPTIONS: {
 
 
 // ============================================================================
+// PAGINATION
+// ============================================================================
+
+// Bounded page size for the product grid. Previously every product that
+// passed the current filter (up to all 211) was rendered into the DOM on
+// every single load - this is what actually drove the ~1.14 MB SSR'd HTML
+// response and the images competing for the shared origin's connection
+// slots. Rendering a bounded window instead, with infinite scroll to reveal
+// more, keeps a single load's real DOM/markup cost fixed regardless of how
+// large the catalogue grows.
+const PAGE_SIZE = 24
+
+
+// ============================================================================
+// CATEGORY PARAM
+// ============================================================================
+
+// Validates a `?category=` URL value against the real category list,
+// falling back to "All" for anything unrecognized (missing param, stale
+// link, typo) rather than rendering an empty/broken filter state.
+function resolveCategoryParam(
+  value: string | null,
+): Category | "All" {
+
+  if (!value) return "All"
+
+  return (
+    CATEGORIES as string[]
+  ).includes(value)
+    ? (value as Category)
+    : "All"
+
+}
+
+
+// ============================================================================
 // SHOP CATALOG
 // ============================================================================
 
@@ -160,11 +196,93 @@ export default function ShopCatalog({
 
 
   // ==========================================================================
+  // URL CATEGORY
+  // ==========================================================================
+  // Category filtering used to be local component state only, with no real
+  // URL a link could point at. It's now mirrored into `?category=`, the
+  // same pattern `search` already uses, so /shop?category=X is a real,
+  // bookmarkable/shareable destination (and other pages, e.g. the homepage
+  // trending cards, can link straight into a filtered view).
+
+  const urlCategory =
+    searchParams.get("category")
+
+
+  // ==========================================================================
   // FILTER STATE
   // ==========================================================================
 
   const [category, setCategory] =
-    useState<Category | "All">("All")
+    useState<Category | "All">(() =>
+      resolveCategoryParam(urlCategory),
+    )
+
+
+  // Adjust `category` when `urlCategory` changes, without a useEffect -
+  // this is the "adjusting state when a prop changes" pattern React docs
+  // recommend over an effect: it runs during render (bailing out before
+  // paint) instead of committing once, running an effect, then committing
+  // again.
+  const [lastSyncedUrlCategory, setLastSyncedUrlCategory] =
+    useState(urlCategory)
+
+  if (urlCategory !== lastSyncedUrlCategory) {
+
+    setLastSyncedUrlCategory(urlCategory)
+
+    setCategory(
+      resolveCategoryParam(urlCategory),
+    )
+
+  }
+
+
+  // ==========================================================================
+  // UPDATE CATEGORY (state + URL together)
+  // ==========================================================================
+
+  function updateCategory(
+    next: Category | "All",
+  ) {
+
+    setCategory(next)
+
+
+    const params =
+      new URLSearchParams(
+        searchParams.toString(),
+      )
+
+
+    if (next === "All") {
+
+      params.delete("category")
+
+    } else {
+
+      params.set("category", next)
+
+    }
+
+
+    const queryString =
+      params.toString()
+
+
+    const newUrl =
+      queryString
+        ? `${pathname}?${queryString}`
+        : pathname
+
+
+    router.replace(
+      newUrl,
+      {
+        scroll: false,
+      },
+    )
+
+  }
 
 
   const [size, setSize] =
@@ -395,6 +513,110 @@ export default function ShopCatalog({
 
 
   // ==========================================================================
+  // PAGINATION (bounded render window + infinite scroll)
+  // ==========================================================================
+
+  const [visibleCount, setVisibleCount] =
+    useState(PAGE_SIZE)
+
+
+  // Snap back to the first page whenever the filters change shape -
+  // otherwise switching filters while scrolled down would either show a
+  // confusing partial page or silently keep rendering a stale, oversized
+  // window. Adjusted during render (not a useEffect) for the same reason
+  // as the category sync above.
+  const filterSignature =
+    `${search}::${category}::${size}::${sort}::${premiumOnly}::${offersOnly}`
+
+  const [lastFilterSignature, setLastFilterSignature] =
+    useState(filterSignature)
+
+  if (filterSignature !== lastFilterSignature) {
+
+    setLastFilterSignature(filterSignature)
+
+    setVisibleCount(PAGE_SIZE)
+
+  }
+
+
+  const visibleProducts =
+    useMemo(
+      () =>
+        filteredProducts.slice(
+          0,
+          visibleCount,
+        ),
+      [filteredProducts, visibleCount],
+    )
+
+
+  const hasMoreProducts =
+    visibleCount < filteredProducts.length
+
+
+  const loadMoreRef =
+    useRef<HTMLDivElement>(null)
+
+
+  function loadMore() {
+
+    setVisibleCount((current) =>
+      Math.min(
+        current + PAGE_SIZE,
+        filteredProducts.length,
+      ),
+    )
+
+  }
+
+
+  // Auto-load the next page as the sentinel below the grid scrolls into
+  // view, so browsing feels like infinite scroll. The "Load more" button
+  // rendered alongside it is the accessible/no-JS-timing-dependent
+  // fallback, not a separate path.
+  useEffect(() => {
+
+    if (!hasMoreProducts) return
+
+
+    const sentinel =
+      loadMoreRef.current
+
+    if (!sentinel) return
+
+
+    const observer =
+      new IntersectionObserver(
+        (entries) => {
+
+          if (entries[0]?.isIntersecting) {
+
+            loadMore()
+
+          }
+
+        },
+        {
+          rootMargin: "600px",
+        },
+      )
+
+
+    observer.observe(sentinel)
+
+
+    return () => {
+
+      observer.disconnect()
+
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMoreProducts, filteredProducts])
+
+
+  // ==========================================================================
   // ACTIVE FILTER COUNT
   // ==========================================================================
 
@@ -429,6 +651,8 @@ export default function ShopCatalog({
 
 
     params.delete("search")
+
+    params.delete("category")
 
 
     const queryString =
@@ -685,7 +909,7 @@ export default function ShopCatalog({
                 category === "All"
               }
               onClick={() =>
-                setCategory("All")
+                updateCategory("All")
               }
             >
               All stickers
@@ -701,7 +925,7 @@ export default function ShopCatalog({
                     category === item
                   }
                   onClick={() =>
-                    setCategory(item)
+                    updateCategory(item)
                   }
                 >
                   {item}
@@ -1068,39 +1292,104 @@ export default function ShopCatalog({
 
         {filteredProducts.length > 0 ? (
 
-          <motion.div
-            layout
-            className="
-              grid
-              gap-5
-              sm:grid-cols-2
-              lg:grid-cols-3
-              xl:grid-cols-4
-            "
-          >
+          <>
 
-            <AnimatePresence
-              mode="popLayout"
+            <motion.div
+              layout
+              className="
+                grid
+                gap-5
+                sm:grid-cols-2
+                lg:grid-cols-3
+                xl:grid-cols-4
+              "
             >
 
-              {filteredProducts.map(
-                (
-                  product,
-                  index,
-                ) => (
+              <AnimatePresence
+                mode="popLayout"
+              >
 
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    index={index}
-                  />
+                {visibleProducts.map(
+                  (
+                    product,
+                    index,
+                  ) => (
 
-                ),
-              )}
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      index={index}
+                    />
+
+                  ),
+                )}
 
             </AnimatePresence>
 
-          </motion.div>
+            </motion.div>
+
+
+            {/* ================================================================
+                LOAD MORE / INFINITE SCROLL SENTINEL
+            ================================================================ */}
+
+            {hasMoreProducts ? (
+
+              <div
+                ref={loadMoreRef}
+                className="
+                  mt-10
+                  flex
+                  justify-center
+                "
+              >
+
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  className="
+                    rounded-full
+                    border
+                    border-black/10
+                    bg-white
+                    px-6
+                    py-3
+                    text-sm
+                    font-bold
+                    text-ink
+                    transition
+                    hover:scale-105
+                    hover:bg-hive-yellow
+                  "
+                >
+                  Load more stickers
+                </button>
+
+              </div>
+
+            ) : (
+
+              visibleProducts.length > PAGE_SIZE && (
+
+                <p
+                  className="
+                    mt-10
+                    text-center
+                    text-xs
+                    font-medium
+                    text-black/35
+                  "
+                >
+                  You&apos;ve seen all{" "}
+                  {filteredProducts.length}{" "}
+                  stickers.
+                </p>
+
+              )
+
+            )}
+
+          </>
 
         ) : (
 
