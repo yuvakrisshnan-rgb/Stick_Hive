@@ -77,6 +77,7 @@ export const EXCLUDED_SOURCE_PATHS = new Map([
   ["Rick and Morty/a0d862d9dd72a960975a9c079dc90b29.jpg", "unlicensed stock preview (visible tiled padlock watermark)"],
   ["Rick and Morty/ec4da4b7ad8e8c386336d5c0b724a913.webp.jpg", "not a sticker - fine-art stippled giraffe illustration, no die-cut/sticker styling and unrelated to any category"],
   ["Anime/download.png", "identifiable photo of a real, non-consenting child - permanently excluded, never seeded or uploaded"],
+  ["harry/f7267b48af5372beca590f4b0ace69be.jpg", "explicit \"TM & © WBEI. (s19)\" copyright watermark baked into the image - a Warner Bros. Entertainment Inc. licensed product photo, not usable without a real license"],
 ]);
 
 export const DEFAULT_SOURCE = String.raw`C:\Users\Yuva\Downloads\drive-download-20260920T111928Z-1-001`;

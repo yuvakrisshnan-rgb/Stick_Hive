@@ -85,12 +85,12 @@ function sqlValue(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
-async function runWranglerD1(dbName, remote, sql, tmpHint) {
+async function runWranglerD1(dbName, remote, sql, tmpHint, extraArgs = []) {
   const tmpFile = path.join(os.tmpdir(), `stickhive-r2upload-${tmpHint}-${process.pid}-${Date.now()}.sql`);
   try {
     await fsp.writeFile(tmpFile, sql, "utf8");
     const modeFlag = remote ? "--remote" : "--local";
-    return execFileSync(wranglerBinRelative, ["d1", "execute", dbName, modeFlag, `--file=${tmpFile}`], {
+    return execFileSync(wranglerBinRelative, ["d1", "execute", dbName, modeFlag, `--file=${tmpFile}`, ...extraArgs], {
       cwd: repoRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -143,9 +143,42 @@ async function main(args) {
   const imagesDir = path.resolve(getArg(args, "images", path.join(process.cwd(), "public", "product-images-build")));
 
   const { rows } = await loadExisting(csvPath);
-  const activeRows = rows.filter((row) => row.status === "active");
+  const allActiveRows = rows.filter((row) => row.status === "active");
 
-  console.log(`Uploading ${activeRows.length} active row(s) to R2 bucket "${bucketName}" (db-target: ${dbTargetRaw})...`);
+  // Skip rows whose image_url already matches the expected key - makes a
+  // re-run after an interrupted prior run genuinely resumable (idempotent
+  // without this too, since re-uploading identical bytes is harmless, but
+  // this avoids redoing real R2 PUTs and D1 writes for hundreds of rows
+  // that already succeeded).
+  console.log(`Reading existing D1 image_url state (${dbName}, ${dbTargetRaw}) to skip already-uploaded rows...`);
+  // Deliberately --command, not --file/runWranglerD1: confirmed directly
+  // that `wrangler d1 execute --remote --file=...` does not return real
+  // SELECT row data - it treats the file as a bulk-import job and returns
+  // import statistics instead, regardless of query content. --command
+  // does not have this problem on either --local or --remote.
+  const existingProducts = (() => {
+    // shell: true routes through cmd.exe on Windows, which re-tokenizes the
+    // whole command line on whitespace - a --command value with spaces
+    // (any real SQL) gets split into separate bogus arguments unless it's
+    // wrapped in its own quotes so cmd.exe treats it as one token.
+    const modeFlag = remote ? "--remote" : "--local";
+    const stdout = execFileSync(
+      wranglerBinRelative,
+      ["d1", "execute", dbName, modeFlag, `--command="SELECT slug, image_url FROM products;"`, "--json"],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], shell: true },
+    );
+    const [{ results }] = JSON.parse(stdout);
+    return results;
+  })();
+  const existingImageBySlug = new Map(existingProducts.map((r) => [r.slug, r.image_url]));
+
+  const activeRows = allActiveRows.filter((row) => {
+    const expectedUrl = `${publicBaseUrl.replace(/\/$/, "")}/products/${row.slug}/main.webp`;
+    return existingImageBySlug.get(row.slug) !== expectedUrl;
+  });
+  const alreadyDone = allActiveRows.length - activeRows.length;
+
+  console.log(`Uploading ${activeRows.length} active row(s) to R2 bucket "${bucketName}" (db-target: ${dbTargetRaw}) - ${alreadyDone} already up to date, skipped...`);
 
   let uploaded = 0;
   let failed = 0;

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// Seeds the D1 `products` table from stickers.csv. Local D1 only - this
-// script never takes a --remote option; there is no way to point it at
-// the remote database short of hand-editing the wrangler invocation, and
-// that's deliberate.
+// Seeds the D1 `products` table from stickers.csv.
 //
 // Usage:
 //   node scripts/seed-products.mjs validate [--csv <path>] [--source <dir>]
-//   node scripts/seed-products.mjs seed [--dry-run] [--csv <path>] [--source <dir>] [--db <name>] [--batch-size N]
+//   node scripts/seed-products.mjs seed [--dry-run] --db-target local|remote [--csv <path>] [--source <dir>] [--db <name>] [--batch-size N]
 //
 // validate: pre-flight checks only, no D1 access, exit 0/1.
 // seed: runs validate first (aborts on any blocking failure), then
-//   upserts by slug into local D1, reporting Inserted/Updated/Skipped/Failed.
+//   upserts by slug into D1, reporting Inserted/Updated/Skipped/Failed.
+//   --db-target has no default (local vs. remote must be an explicit,
+//   deliberate choice) - mirrors upload-product-images-r2.mjs's identical
+//   --db-target gate for the same reason: this writes real rows.
 
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -84,8 +84,9 @@ function assertSafeDbName(dbName) {
 // the same reason.
 const wranglerBinRelative = path.join("node_modules", ".bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler");
 
-function runWranglerD1File(dbName, sqlFilePath, extraArgs = []) {
-  return execFileSync(wranglerBinRelative, ["d1", "execute", dbName, "--local", `--file=${sqlFilePath}`, ...extraArgs], {
+function runWranglerD1File(dbName, remote, sqlFilePath, extraArgs = []) {
+  const modeFlag = remote ? "--remote" : "--local";
+  return execFileSync(wranglerBinRelative, ["d1", "execute", dbName, modeFlag, `--file=${sqlFilePath}`, ...extraArgs], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -93,18 +94,36 @@ function runWranglerD1File(dbName, sqlFilePath, extraArgs = []) {
   });
 }
 
-async function runSqlViaTempFile(dbName, sql, extraArgs, tmpNameHint) {
+async function runSqlViaTempFile(dbName, remote, sql, extraArgs, tmpNameHint) {
   const tmpFile = path.join(os.tmpdir(), `stickhive-${tmpNameHint}-${process.pid}-${Date.now()}.sql`);
   try {
     await fsp.writeFile(tmpFile, sql, "utf8");
-    return runWranglerD1File(dbName, tmpFile, extraArgs);
+    return runWranglerD1File(dbName, remote, tmpFile, extraArgs);
   } finally {
     await fsp.rm(tmpFile, { force: true });
   }
 }
 
-async function queryAllProducts(dbName) {
-  const stdout = await runSqlViaTempFile(dbName, "SELECT * FROM products;", ["--json"], "query");
+function queryAllProducts(dbName, remote) {
+  // Deliberately --command, not --file: confirmed directly that
+  // `wrangler d1 execute --remote --file=...` does NOT return real SELECT
+  // row data at all - it treats the file as a bulk-import job and returns
+  // import statistics ({"Total queries executed", "Rows read", ...})
+  // instead, regardless of query content. This silently broke the
+  // insert-vs-update classification below the first time --remote support
+  // was added here (every row looked "new" because `results` held one
+  // stats object with no .slug, not the real existing rows) - --command
+  // does not have this problem on either --local or --remote.
+  // shell: true routes through cmd.exe on Windows, which re-tokenizes the
+  // whole command line on whitespace - a --command value with spaces (any
+  // real SQL) gets split into separate bogus arguments unless it's wrapped
+  // in its own quotes so cmd.exe treats it as one token.
+  const modeFlag = remote ? "--remote" : "--local";
+  const stdout = execFileSync(
+    wranglerBinRelative,
+    ["d1", "execute", dbName, modeFlag, `--command="SELECT * FROM products;"`, "--json"],
+    { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], shell: true },
+  );
   const [{ results }] = JSON.parse(stdout);
   return results;
 }
@@ -269,6 +288,13 @@ async function validate(args) {
 
 async function seed(args) {
   const dryRun = hasFlag(args, "dry-run");
+  const dbTargetRaw = getArg(args, "db-target");
+  if (dbTargetRaw !== "local" && dbTargetRaw !== "remote") {
+    console.error("--db-target must be exactly 'local' or 'remote' - no default, this is deliberate.");
+    process.exitCode = 1;
+    return;
+  }
+  const remote = dbTargetRaw === "remote";
   const dbName = assertSafeDbName(getArg(args, "db", "stickhive-db"));
   const batchSize = Number(getArg(args, "batch-size", 50));
 
@@ -279,8 +305,8 @@ async function seed(args) {
     return;
   }
 
-  console.log(`\nReading current D1 state (${dbName}, local)...`);
-  const existingProducts = await queryAllProducts(dbName);
+  console.log(`\nReading current D1 state (${dbName}, ${dbTargetRaw})...`);
+  const existingProducts = await queryAllProducts(dbName, remote);
   const existingBySlug = new Map(existingProducts.map((r) => [r.slug, r]));
 
   const nowIso = new Date().toISOString();
@@ -317,13 +343,13 @@ async function seed(args) {
   for (let i = 0; i < toWrite.length; i += batchSize) {
     const batch = toWrite.slice(i, i + batchSize);
     try {
-      await runSqlViaTempFile(dbName, buildUpsertStatement(batch), [], `seed-batch-${i}`);
+      await runSqlViaTempFile(dbName, remote, buildUpsertStatement(batch), [], `seed-batch-${i}`);
     } catch (batchError) {
       // Isolate exactly which row(s) in this batch failed by retrying
       // individually, rather than losing the whole batch to one bad row.
       for (const record of batch) {
         try {
-          await runSqlViaTempFile(dbName, buildUpsertStatement([record]), [], `seed-row-${record.slug}`);
+          await runSqlViaTempFile(dbName, remote, buildUpsertStatement([record]), [], `seed-row-${record.slug}`);
         } catch (rowError) {
           failed.push({ slug: record.slug, error: rowError instanceof Error ? rowError.message : String(rowError) });
         }
