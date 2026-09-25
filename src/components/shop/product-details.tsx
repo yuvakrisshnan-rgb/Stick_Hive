@@ -322,6 +322,7 @@ export default function ProductDetails({
               {activeImage ? (
 
                 <StickerImage
+                  className="w-full"
                   product={{
                     ...product,
                     image: activeImage,
