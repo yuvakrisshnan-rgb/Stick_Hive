@@ -224,6 +224,78 @@ function getDieCutPoints(layers: StickerLayer[]): ContourPoint[] | null {
 }
 
 // ============================================================================
+// SHAPE CLIP PATH
+// ============================================================================
+// Builds the actual clip region for a shape, so Circle/Square/Rounded/
+// Die-cut genuinely constrain what's drawn to that boundary - both
+// on-screen and in the print export, since Konva's clipFunc applies to
+// stage.toDataURL() the same way it does to normal rendering. Same
+// boundary math the border stroke and dashed cut-line guide already use
+// (PRINT_AREA_SIZE/2 - 10 for Circle's radius, the CANVAS_MARGIN + 10
+// inset rect for Square/Rounded, whiteBackingPoints for Die-cut) so the
+// clip edge, the guide, and the border all agree on where the cut line
+// actually is.
+//
+// Returns null when there's no real boundary to clip to yet (Die-cut
+// with no detected contour) - the caller should render unclipped in that
+// case, matching the existing "muted editor guide, not a fake cutline"
+// fallback.
+function getShapeClipFn(
+  shape: CustomStickerShape,
+  whiteBackingPoints: ContourPoint[] | null,
+): ((ctx: Konva.Context) => void) | null {
+  if (shape === "Circle") {
+    return (ctx) => {
+      ctx.arc(
+        STAGE_SIZE / 2,
+        STAGE_SIZE / 2,
+        PRINT_AREA_SIZE / 2 - 10,
+        0,
+        Math.PI * 2,
+      );
+    };
+  }
+
+  if (shape === "Square" || shape === "Rounded") {
+    const x = CANVAS_MARGIN + 10;
+    const y = CANVAS_MARGIN + 10;
+    const w = PRINT_AREA_SIZE - 20;
+    const h = PRINT_AREA_SIZE - 20;
+    const r = shape === "Rounded" ? 48 : 0;
+
+    return (ctx) => {
+      if (r > 0) {
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.arcTo(x + w, y, x + w, y + r, r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h);
+        ctx.arcTo(x, y + h, x, y + h - r, r);
+        ctx.lineTo(x, y + r);
+        ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
+      } else {
+        ctx.rect(x, y, w, h);
+      }
+    };
+  }
+
+  // Die-cut
+  if (whiteBackingPoints && whiteBackingPoints.length >= 3) {
+    return (ctx) => {
+      whiteBackingPoints.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+      ctx.closePath();
+    };
+  }
+
+  return null;
+}
+
+// ============================================================================
 // SNAP GUIDE HELPERS
 // ============================================================================
 // Computes horizontal/vertical guide lines (canvas center + other layer
@@ -846,6 +918,7 @@ export default function StickerCanvas({
   const whiteBackingPoints = dieCutPoints
     ? offsetFromCentroid(dieCutPoints, DIE_CUT_WHITE_BORDER_FACTOR)
     : null;
+  const shapeClipFn = getShapeClipFn(shape, whiteBackingPoints);
 
   return (
     <div className="flex flex-wrap items-start justify-center gap-4">
@@ -883,8 +956,20 @@ export default function StickerCanvas({
                 was the actual bug - canvasBackgroundColor used to be wired
                 here instead, painting the whole Stage rather than the
                 artboard).
+
+                Gated on showGuides (hidden during the export snapshot,
+                same as the Transformer/snap-guides below) now that the
+                clipped content group can have real transparent gaps: this
+                Rect spans the full Stage, including underneath the print
+                area's own footprint, so without hiding it those gaps
+                would show opaque #e8e8e8 in the exported PNG instead of
+                real alpha transparency - defeating the whole point of
+                clipping. It was never visible there before only because
+                the (always-opaque, unclipped) print-area Rect fully
+                masked it at every pixel within that footprint.
             ================================================================ */}
 
+            {showGuides && (
             <Rect
               x={0}
               y={0}
@@ -893,72 +978,140 @@ export default function StickerCanvas({
               fill="#e8e8e8"
               listening={false}
             />
+            )}
 
             {/* ================================================================
-                PRINT AREA (the sticker's own working surface/background -
-                this is "the canvas" the Background control actually paints)
+                SHAPE SHADOW (chrome only, unclipped) — casts the print
+                card's drop shadow following the TRUE shape boundary
+                (circle/rect/rounded-rect/die-cut polygon) rather than
+                always a square. Deliberately separate from the clipped
+                content below: a canvas clip() region also clips any
+                shadow drawn inside it, so a shadow that needs to bleed
+                past the clip edge has to be its own unclipped shape using
+                the same boundary math.
+
+                Gated on showGuides, same as the viewport backdrop above:
+                even at 6% opacity, an unclipped shadow blur bleeding a
+                few pixels past the true edge is still non-zero alpha
+                outside the shape in the export - hiding it during the
+                snapshot (same toggle generateThumbnails() already flips)
+                is what actually gets fully-zero alpha outside the cut
+                line, not just "close to zero."
             ================================================================ */}
 
-            <Rect
-              x={CANVAS_MARGIN}
-              y={CANVAS_MARGIN}
-              width={PRINT_AREA_SIZE}
-              height={PRINT_AREA_SIZE}
-              fill={canvasBackgroundColor}
-              cornerRadius={16}
-              shadowColor="#000000"
-              shadowOpacity={0.06}
-              shadowBlur={20}
-              listening={false}
-            />
+            {showGuides && shape === "Circle" && (
+              <Line
+                points={buildCirclePoints(
+                  STAGE_SIZE / 2,
+                  STAGE_SIZE / 2,
+                  PRINT_AREA_SIZE / 2 - 10,
+                )}
+                closed
+                fill={canvasBackgroundColor}
+                shadowColor="#000000"
+                shadowOpacity={0.06}
+                shadowBlur={20}
+                listening={false}
+              />
+            )}
 
-            {/* ================================================================
-                DIE-CUT BACKING (behind artwork) — same scope as above, for
-                the Die-cut shape's own boundary once that shape is active.
-            ================================================================ */}
+            {showGuides && (shape === "Square" || shape === "Rounded") && (
+              <Rect
+                x={CANVAS_MARGIN + 10}
+                y={CANVAS_MARGIN + 10}
+                width={PRINT_AREA_SIZE - 20}
+                height={PRINT_AREA_SIZE - 20}
+                cornerRadius={shape === "Rounded" ? 48 : 0}
+                fill={canvasBackgroundColor}
+                shadowColor="#000000"
+                shadowOpacity={0.06}
+                shadowBlur={20}
+                listening={false}
+              />
+            )}
 
-            {shape === "Die-cut" && whiteBackingPoints && (
+            {showGuides && shape === "Die-cut" && whiteBackingPoints && (
               <Line
                 points={flattenPoints(whiteBackingPoints)}
                 closed
                 fill={canvasBackgroundColor}
+                shadowColor="#000000"
+                shadowOpacity={0.06}
+                shadowBlur={20}
+                listening={false}
+              />
+            )}
+
+            {showGuides && shape === "Die-cut" && !whiteBackingPoints && (
+              <Rect
+                x={CANVAS_MARGIN}
+                y={CANVAS_MARGIN}
+                width={PRINT_AREA_SIZE}
+                height={PRINT_AREA_SIZE}
+                fill={canvasBackgroundColor}
+                cornerRadius={16}
+                shadowColor="#000000"
+                shadowOpacity={0.06}
+                shadowBlur={20}
                 listening={false}
               />
             )}
 
             {/* ================================================================
-                LAYERS
+                CLIPPED CONTENT — the sticker's actual printed surface
+                (background fill + layers), genuinely constrained to the
+                selected shape's boundary via Konva's clipFunc. This is
+                what fixes both the on-screen misrepresentation (Circle/
+                Square/Rounded/Die-cut never actually clipped anything
+                before this) and the flat-opaque-square print export (the
+                same clip applies inside stage.toDataURL()). shapeClipFn
+                is null only for Die-cut with no detected contour yet, in
+                which case this renders unclipped - the full, opaque,
+                undifferentiated square is the correct honest state until
+                there's a real boundary to cut along (see DIE_CUT_REVAMP.md).
             ================================================================ */}
 
-            {layers.map((layer) =>
-              layer.type === "image" ? (
-                <ImageLayerNode
-                  key={layer.id}
-                  layer={layer}
-                  layers={layers}
-                  onSelect={() => onSelectLayer(layer.id)}
-                  onChange={(updates) =>
-                    onUpdateLayer(layer.id, updates)
-                  }
-                  onCommitHistory={onCommitHistory}
-                  registerRef={registerRef}
-                  onDragGuides={setDragGuides}
-                />
-              ) : (
-                <TextLayerNode
-                  key={layer.id}
-                  layer={layer}
-                  layers={layers}
-                  onSelect={() => onSelectLayer(layer.id)}
-                  onChange={(updates) =>
-                    onUpdateLayer(layer.id, updates)
-                  }
-                  onCommitHistory={onCommitHistory}
-                  registerRef={registerRef}
-                  onDragGuides={setDragGuides}
-                />
-              ),
-            )}
+            <Group clipFunc={shapeClipFn ?? undefined}>
+              <Rect
+                x={CANVAS_MARGIN}
+                y={CANVAS_MARGIN}
+                width={PRINT_AREA_SIZE}
+                height={PRINT_AREA_SIZE}
+                fill={canvasBackgroundColor}
+                cornerRadius={16}
+                listening={false}
+              />
+
+              {layers.map((layer) =>
+                layer.type === "image" ? (
+                  <ImageLayerNode
+                    key={layer.id}
+                    layer={layer}
+                    layers={layers}
+                    onSelect={() => onSelectLayer(layer.id)}
+                    onChange={(updates) =>
+                      onUpdateLayer(layer.id, updates)
+                    }
+                    onCommitHistory={onCommitHistory}
+                    registerRef={registerRef}
+                    onDragGuides={setDragGuides}
+                  />
+                ) : (
+                  <TextLayerNode
+                    key={layer.id}
+                    layer={layer}
+                    layers={layers}
+                    onSelect={() => onSelectLayer(layer.id)}
+                    onChange={(updates) =>
+                      onUpdateLayer(layer.id, updates)
+                    }
+                    onCommitHistory={onCommitHistory}
+                    registerRef={registerRef}
+                    onDragGuides={setDragGuides}
+                  />
+                ),
+              )}
+            </Group>
 
             {/* ================================================================
                 SNAP GUIDES (shown while dragging)
