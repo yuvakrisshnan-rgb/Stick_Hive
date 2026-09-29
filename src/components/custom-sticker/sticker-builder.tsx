@@ -338,6 +338,14 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   const [uploadStatusMessage, setUploadStatusMessage] = useState(
     "Preparing image…",
   );
+  // Drag-and-drop onto the canvas area - visual feedback only, the actual
+  // drop handler below reuses the exact same processUploadedFile pipeline
+  // as the file <input> (same validation, same background-removal/contour
+  // pass). A plain counter, not a boolean: dragging over a CHILD element
+  // inside the drop zone fires dragleave on the parent before dragenter on
+  // the child, so a naive boolean flickers the overlay off and on as the
+  // pointer crosses child element boundaries while dragging.
+  const [dragDepth, setDragDepth] = useState(0);
   // Surfaces the automatic ML background-removal failure the previous
   // silent catch (console.warn only) left invisible to the user - a real,
   // non-crashing rejection that nonetheless left them with an opaque photo
@@ -375,13 +383,24 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
     event: React.ChangeEvent<HTMLInputElement>,
   ) {
     const file = event.target.files?.[0];
+    event.target.value = "";
 
     if (!file) {
       return;
     }
 
-    event.target.value = "";
+    await processUploadedFile(file);
+  }
 
+  // Drag-and-drop and the file <input>'s onChange both land here - the
+  // <input> handler above just extracts the File and resets its own value
+  // (so re-selecting the same file still fires onChange next time), then
+  // defers to the same pipeline a drop uses. uploadModeRef already governs
+  // add-vs-replace for both paths identically (triggerAddImage/
+  // triggerReplaceImage set it before the input is even opened; a drop
+  // always means "add a new layer", so it's left at whatever it already
+  // is - "add" on first load, same as clicking "Add Image").
+  async function processUploadedFile(file: File) {
     setUploadError("");
     setBackgroundRemovalNotice(null);
 
@@ -1039,6 +1058,41 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
   }
 
   // --------------------------------------------------------------------------
+  // DRAG-AND-DROP UPLOAD (real, not the "coming soon" that shipped
+  // elsewhere - see DECISIONS.md for why upload-section.tsx/
+  // size-selector.tsx weren't the right place to build this)
+  // --------------------------------------------------------------------------
+
+  function handleCanvasDragEnter(event: React.DragEvent) {
+    event.preventDefault();
+    if (event.dataTransfer.types.includes("Files")) {
+      setDragDepth((depth) => depth + 1);
+    }
+  }
+
+  function handleCanvasDragOver(event: React.DragEvent) {
+    // Required for onDrop to fire at all - a plain dragover with no
+    // preventDefault leaves the browser's own "not a drop target" cursor
+    // and silently ignores the drop.
+    event.preventDefault();
+  }
+
+  function handleCanvasDragLeave(event: React.DragEvent) {
+    event.preventDefault();
+    setDragDepth((depth) => Math.max(0, depth - 1));
+  }
+
+  async function handleCanvasDrop(event: React.DragEvent) {
+    event.preventDefault();
+    setDragDepth(0);
+
+    const file = event.dataTransfer.files?.[0];
+    if (!file) return;
+
+    await processUploadedFile(file);
+  }
+
+  // --------------------------------------------------------------------------
   // SELECTED LAYER
   // --------------------------------------------------------------------------
 
@@ -1080,7 +1134,21 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
       />
 
       <div className="flex flex-1 items-start gap-4 py-4 sm:gap-6 sm:py-6">
-        <div className="min-w-0 flex-1">
+        <div
+          className="relative min-w-0 flex-1"
+          onDragEnter={handleCanvasDragEnter}
+          onDragOver={handleCanvasDragOver}
+          onDragLeave={handleCanvasDragLeave}
+          onDrop={handleCanvasDrop}
+        >
+          {dragDepth > 0 && (
+            <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-[2.5rem] border-4 border-dashed border-hive-yellow bg-hive-yellow/20 backdrop-blur-[1px]">
+              <p className="rounded-full bg-black px-5 py-2.5 text-sm font-extrabold text-white shadow-xl">
+                Drop image to add it
+              </p>
+            </div>
+          )}
+
           <StickerCanvas
             layers={layers}
             selectedLayerId={selectedLayerId}
@@ -1126,7 +1194,7 @@ export default function StickerBuilder({ editId }: StickerBuilderProps) {
           {layers.length === 0 && (
             <p className="mt-4 text-center text-sm font-medium text-black/40">
               Tap &ldquo;Add Image&rdquo; or &ldquo;Add Text&rdquo; on the
-              right to start designing.
+              right, or drag an image onto the canvas, to start designing.
             </p>
           )}
 
