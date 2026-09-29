@@ -55,6 +55,8 @@ function CustomStickerContent(){
 
       <StickerBuilder
 
+        key={editId ?? "new"}
+
         editId={editId ?? undefined}
 
       />
