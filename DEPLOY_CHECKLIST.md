@@ -1,66 +1,56 @@
 # Deploy checklist
 
-Exact commands for everything this session's standing instructions say to stop before: remote D1 writes, production deploy, real R2/Cloudflare/Resend/Upstash changes or secrets, force-push, hard reset, deleting files outside build output. Nothing below has been run. Run each step, verify its own "Verify" line, before moving to the next.
+The manual, non-automated steps for this project - the ones `.github/workflows/deploy.yml` deliberately never runs on a push (remote D1 schema changes, R2 bucket/object operations, anything that touches real production data or infra). A push to `Yuva---Dev` only ever does: config check → `build:vinext` → `deploy:vinext` (the Worker code itself). Everything below is run by hand, when it's actually needed - this is a reference, not a one-time task list.
+
+## Status: the original migration (D1 + R2 product pipeline) is done
+
+`migrations/0006_products.sql` is live on remote D1, the `products` table has 298 rows (211 active, 87 pending review), every active row has a real R2 image, and `PRODUCTS_SOURCE=d1` has been set in `wrangler.jsonc`'s committed `vars` since 2026-09-21 - the shop, checkout, and homepage all read the real catalogue in production right now. See STATUS.md for the current live state, DECISIONS.md for the full history of how it got there. The two sections below are **kept as reusable instructions**, not something that needs re-running - use them the next time a migration or an R2 upload is actually needed.
 
 ## Vercel note
 
-Two Vercel projects (`stick-hive`, `stick-hive-9k1a`) build every push to `Yuva---Dev` - they act as a type-check/build gate (see DECISIONS.md's 2026-09-21 entry for the one real regression this caught) but **production deploys go through Cloudflare (vinext), not Vercel**. D1 bindings don't exist on Vercel at all - anything that calls `getD1()` will always fail there, which is exactly why `/shop` and `/shop/[id]` needed `PRODUCTS_SOURCE`'s flag-gated fallback (see DECISIONS.md) rather than an unconditional D1 call.
+Vercel has been dropped entirely - Cloudflare (`vinext`) is the only deploy target now. Don't reintroduce a Vercel-based gate; the GitHub Actions workflow (`build:vinext` as a real build gate, before the deploy step) is what that role moved to.
 
-## 1. Apply the products migration to remote D1
+## Applying a new D1 migration to remote
 
-Local D1 already has this (`migrations/0006_products.sql`, applied and seeded locally - 194 rows, 107 active). Remote does not.
+1. Add the migration file under `migrations/` (next number after the highest existing one - `0007_...sql` as of this writing).
+2. Apply it locally first and verify against local D1:
+   ```
+   npx wrangler d1 migrations apply stickhive-db --local
+   npx wrangler d1 execute stickhive-db --local --command "PRAGMA table_info(<table>)"
+   ```
+3. Apply to remote, by hand, never via CI:
+   ```
+   npx wrangler d1 migrations apply stickhive-db --remote
+   ```
+4. **Verify**: `npx wrangler d1 execute stickhive-db --remote --command "PRAGMA table_info(<table>)"` matches what the migration file defines.
 
-```
-npx wrangler d1 migrations apply stickhive-db --remote
-```
+Reminder from this session's own experience: `wrangler d1 execute --remote --file=<path>` does **not** return real `SELECT` row data - it treats the file as a bulk-import job and returns import statistics regardless of query content. Use `--command` for any read you actually need the results of, on both `--local` and `--remote`.
 
-**Verify**: `npx wrangler d1 execute stickhive-db --remote --command "PRAGMA table_info(products)"` shows the same 14 columns as `migrations/0006_products.sql`.
+## Uploading new/changed product images to R2
 
-## 2. Seed remote D1
-
-```
-node scripts/seed-products.mjs seed --db stickhive-db --remote
-```
-
-Check `scripts/seed-products.mjs`'s own `--help`/argument handling for the exact remote-target flag name before running - it was built and tested against `--local` this session; confirm the remote equivalent matches before running against real data.
-
-**Verify**: `npx wrangler d1 execute stickhive-db --remote --command "SELECT COUNT(*) FROM products WHERE status='active'"` matches the local active count (107, unless the source CSV has changed since).
-
-## 3. Create the R2 bucket and upload product images
-
-Bucket doesn't exist yet - `scripts/upload-product-images-r2.mjs` was built this session but deliberately never run (see its own double-gate: requires both `--confirm` and `CONFIRM_R2_UPLOAD=yes`).
+The bucket (`stickhive-product-images`) and its public dev URL already exist - this is only needed when new products are added or existing images change.
 
 ```
-npx wrangler r2 bucket create stickhive-product-images
-npx wrangler r2 bucket dev-url enable stickhive-product-images
-npx wrangler types
 node scripts/optimize-product-images.mjs --status active
-CONFIRM_R2_UPLOAD=yes node scripts/upload-product-images-r2.mjs --confirm --db-target remote
+CONFIRM_R2_UPLOAD=yes node scripts/upload-product-images-r2.mjs --confirm --db-target remote --public-base-url https://pub-8a6c62ba68f94cc09c8327319bffa53c.r2.dev
 ```
 
-**Verify**: `npx wrangler r2 object get stickhive-product-images/products/<any-active-slug>/main.webp` returns something; `SELECT image_url FROM products WHERE slug = '<that-slug>'` (remote) is no longer null.
+`upload-product-images-r2.mjs` is idempotent - it skips any row whose `image_url` already matches the expected key, so re-running it after ingesting a new batch only uploads what's actually new.
 
-## 4. Flip the live shop to D1
+**Verify**: `npx wrangler d1 execute stickhive-db --remote --command "SELECT COUNT(*) FROM products WHERE status='active' AND image_url IS NOT NULL"` matches the active-row count.
 
-Only after steps 1-3 are done and verified. Set in the production environment (not `.env.local` - that's git-ignored dev-only):
+## Production deploy
 
-```
-PRODUCTS_SOURCE=d1
-```
-
-Where this is actually set depends on where StickHive's Cloudflare secrets/vars already live (check the existing `wrangler secret` usage this project already has for `RESEND_API_KEY` etc. as the precedent) - not something to guess at here.
-
-**Verify**: hit the real deployed `/shop` URL, confirm it now shows the real sticker-intake catalogue (not the "Hive Original"/"Neon City"-style static demo names) with working images. Then re-run `npm run test:e2e` with `PLAYWRIGHT_BASE_URL` pointed at the real deployment (same pattern as the note already in `tests/e2e/api-security.spec.ts` about the concurrent-cooldown test needing a real deployment with Upstash configured) to catch anything the local/static-fallback runs couldn't.
-
-## 5. Production deploy
+Normally just `git push origin Yuva---Dev` - the GitHub Actions workflow handles build + deploy. Only run these by hand if deploying outside that workflow for some reason:
 
 ```
 npm run build:vinext
 npm run deploy:vinext
 ```
 
-**Verify**: whatever this project's existing post-deploy smoke-check process is (not established/documented in this session - check for one before relying on silence as success).
+**Verify**: hit the real deployed site, confirm `/shop` shows the current catalogue with working images. No established automated post-deploy smoke-check exists yet - don't rely on workflow silence alone as proof of a healthy deploy; do a real spot-check.
 
 ## Not covered here
 
-Task 4 (the AI shopping assistant) will need its own entries once built - at minimum `ANTHROPIC_API_KEY` as a secret, and whatever spend-cap/rate-limit infra it ends up needing (Upstash is already used for rate limiting elsewhere in this project - see `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` in the rate-limit module - likely the same path here rather than something new).
+- **Cloudflare Web Analytics** - not yet enabled on the site at all (prerequisite for any future admin "Traffic" section - see STATUS.md/BACKLOG.md). Turning it on is a Cloudflare dashboard step, not a `wrangler` command - not documented here because it hasn't been done yet.
+- **AI shopping assistant** (not started) will need its own entries once built - at minimum `ANTHROPIC_API_KEY` as a secret, and whatever spend-cap/rate-limit infra it ends up needing (Upstash is already used for rate limiting elsewhere - `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` - likely the same path here).

@@ -1,47 +1,43 @@
 # Status
 
-Snapshot of where this session's task list stands. Update this alongside the work, not after - it should always describe the current commit, not a plan.
+Snapshot of where the live app actually stands. Update this alongside the work, not after - it should always describe the current commit and what's actually running in production, not a plan or a historical log (that's DECISIONS.md).
 
 ## Branch: `Yuva---Dev`
 
-Two Vercel projects (`stick-hive`, `stick-hive-9k1a`) build every push to this branch as a type-check/build gate; production deploys go through Cloudflare (vinext), not Vercel - see DEPLOY_CHECKLIST.md's Vercel note. D1 bindings don't exist on Vercel, which is exactly why the shop rewire below needed a flag-gated fallback rather than a hard cutover.
+The only branch that deploys. `main` and `vishal-dev` never trigger a deploy. Every push to `Yuva---Dev` runs `.github/workflows/deploy.yml`: checks required config (`scripts/check-required-config.mjs`), builds (`npm run build:vinext`), then deploys straight to Cloudflare Workers (`npm run deploy:vinext`) - no staging step, no manual approval. **Vercel has been dropped entirely** - the two Vercel projects mentioned in this file's older history no longer exist/deploy; Cloudflare is the single deployment target.
 
-## Task 0 - pre-push gate: **standing, every push**
+D1 migrations are deliberately **not** run by the workflow - `wrangler d1 migrations apply --remote` stays a manual command, run by hand, never auto-applied by a push (see DEPLOY_CHECKLIST.md).
 
-`npx tsc --noEmit`, `npm run build`, `npm run build:vinext`, `npx eslint` on touched files. Never push on failure. See DECISIONS.md's 2026-09-21 entry for the one incident that made this mandatory.
+## Pre-push gate: standing, every push
 
-## Task 1 - Category union extension: **done, pushed (`7b79853`)**
+`npx tsc --noEmit`, `npm run build`, `npm run build:vinext`, `npx eslint` on touched files. Never push on failure - see DECISIONS.md's 2026-09-21 entry for the incident that made this mandatory.
 
-All 7 sticker-intake categories covered (`Anime` already matched; 6 added verbatim, no lossy merges). Not yet surfaced in the shop's filter UI or home-page showcase - documented as deliberate in DECISIONS.md, will need revisiting once D1 categories have real products behind them in the live catalogue.
+## What's live in production right now
 
-## Task 2 - Bug hunt + full test pass: **done, committed**
+**D1 + R2 have been live since 2026-09-21** - `PRODUCTS_SOURCE=d1` is set in `wrangler.jsonc`'s committed `vars` block (not a flag waiting to be flipped), and every active product has a real `image_url`/`thumbnail_url` pointing at the `stickhive-product-images` R2 bucket's public `pub-*.r2.dev` domain. `/shop`, `/shop/[id]`, checkout, and the homepage all read the real D1 catalogue - the static `PRODUCTS` array (`src/lib/product-data.ts`) is now only a fallback for a D1 read failure at runtime, not the default path.
 
-- `npm run test:unit` - 13/13 passing.
-- `npx playwright test` (chromium + mobile-safari) - 74/74 passing.
-- Full list of what was found and fixed: DECISIONS.md's 2026-09-21 "Bug hunt" entry.
-- Route/module review (getClientIp, rate limiting, cron cleanup, seed/intake scripts, `/dev/product-preview`) - covered incidentally via the bug hunt above; no separate dedicated pass was run.
-- Pre-existing lint debt found but deliberately deferred (not blocking this push, not in scope for it): BACKLOG.md.
+**Catalogue size** (remote D1, checked directly): **298 products** - 211 `status='active'` (live, purchasable, all with real R2 images), 87 `status='draft', needs_review=1` (pending review, no images uploaded yet - see BACKLOG.md's review-queue note). Schema: `migrations/0001` through `0006`, no migration added since `0006_products.sql`.
 
-## Task 3 - D1 shop rewire: **done, committed - server side AND client side**
+**Checkout**: D1-backed end to end. `createOrderFromCheckout` validates catalog-product line items against real D1 product rows (`status='active' AND needs_review=0`); custom-sticker line items validate their own shape. UPI, Razorpay, and Stripe payment methods all live.
 
-Found already substantially built (uncommitted) from before a context-compaction boundary this session; the flag-gated fallback and force-dynamic fix landed first. Checkout and the client-side cart/wishlist were a separate, later fix - full account in DECISIONS.md.
+**Custom sticker editor** (`/custom-sticker`): full-featured - real ML background removal (`@imgly/background-removal`, automatic on upload) with a Fast/High-precision re-run option and post-processing (erode/feather/decontaminate), a manual eraser (Erase/Soft Erase/Restore + zoom), real die-cut contour detection, and **all four shape modes (Circle/Square/Rounded/Die-cut) now genuinely clip the artwork** - both on-screen and in the exported print PNG (fixed 2026-09-29; previously "shape" was purely decorative and every export was a flat opaque square regardless of shape - see DECISIONS.md). Real drag-and-drop upload onto the canvas. "My Designs" lists and reopens the user's own custom stickers already in cart (not a separate saved-design library - none exists in the schema; see DECISIONS.md for why that was the honest scope).
 
-- `/api/products` (`GET`, public) now exists - wraps `backend/products/catalog.ts`'s `listShopProducts()`, the same flag-gated source `/shop`'s Server Components call directly.
-- Active-only, AND not-needs-review: `backend/products/service.ts`'s D1 queries filter `status = 'active' AND needs_review = 0` explicitly (was status-only).
-- Checkout (`backend/orders/service.ts`'s `createOrderFromCheckout`) now validates catalog-product line items against `getShopProductBySlug` instead of the old static-array-only `PRODUCT_BY_ID` map. Custom-sticker line items untouched.
-- Client-side cart/wishlist (`store-provider.tsx`) now resolve products against the same dynamic, flag-gated catalog instead of the static array alone - was a hard blocker (`addToCart` silently no-op'd for any D1 product) found and fixed during this task's own verification pass, not asked for up front.
-- Old-ID-to-slug mapping: not applicable - the two catalogues are disjoint product sets, see BACKLOG.md.
-- Static array as flag-gated fallback: done and unchanged (`PRODUCTS_SOURCE` env var, defaults to static; a D1 read failure at runtime also falls back rather than erroring).
-- **Verified end-to-end**, not just locally-exercised: real signed-in Playwright run against `dev:vinext` with `PRODUCTS_SOURCE=d1` - added a real D1-only product to cart through the actual UI, checked out, order created (`201`) with correct server-computed price; a draft/needs_review product and an unknown product id both correctly rejected (`400`) at the same checkout path. Still only run locally against *local* D1 - the remote migration/seed/R2 upload in DEPLOY_CHECKLIST.md are still unexecuted, so production still has no D1 product data to serve and `PRODUCTS_SOURCE` stays unset everywhere real.
+**Admin dashboard** (hashed `/admin/<key>` path - `/admin` itself deliberately 404s; run `npm run admin:path` to get the real URL): three tabs - **Order desk** (payment verification, fulfillment, Delhivery shipping), **Analytics** (revenue trend, orders by location, top products, status breakdowns), **Insights** (added 2026-09-30 - three automated alert conditions: stuck UPI payments unverified 24h+, review-queue backlog growth, order-volume shift vs. a 7-day baseline; see DECISIONS.md for exactly what each one checks and why).
 
-## Task 4 - AI shopping assistant: **not started**
+**Homepage**: hero, "New Arrivals" (renamed from the non-functional "Trending" - see DECISIONS.md 2026-09-25), and a category showcase now covering all 7 real sticker-intake categories (Anime, Bollywood, BTS, flower stickers, Meme stickers, Rick and Morty, Stickers with dialogues - added 2026-09-30).
 
-Full scope in BACKLOG.md.
+**Shop** (`/shop`): paginated (24 per page + infinite scroll, added 2026-09-25 once the catalogue grew past 200 products), real URL-addressable `?category=` filter.
 
-## Task 5 - BACKLOG.md / STATUS.md / DECISIONS.md: **ongoing**
+## Known gaps / explicitly not done
 
-All three exist and are current as of this commit. Keep updating them alongside future work, not after.
+- **Review queue has no image-serving path** - the 87 `needs_review=1` rows have no `image_url` (R2 upload only runs for `status='active'` rows). A review-queue admin UI needs this solved first - see BACKLOG.md.
+- **Cloudflare Web Analytics is not enabled** - no traffic/visitor data exists anywhere in the app. A prerequisite for any future "Traffic" admin section, not yet turned on.
+- **AI shopping assistant** - not started. Full scope in BACKLOG.md.
+- **`src/lib/product-data.ts`'s static `PRODUCTS` array and `src/components/shop/store-provider.tsx`'s dead second wishlist implementation** - both still present, both flagged for a deliberate delete-or-keep decision in BACKLOG.md, neither touched without that decision being made first.
+- **No real signed-in e2e coverage** for cart/checkout - `cart-checkout.spec.ts` only covers the guest experience. BACKLOG.md has the two options (a dev-only session-minting test seam, or driving the real OTP flow against a test inbox).
 
-## Immediate next step
+## Where to look for more detail
 
-Nothing blocking locally. Next real task is either Task 4 (AI assistant, not started) or picking one of BACKLOG.md's items (pre-existing lint debt, the dead wishlist implementation in store-provider.tsx, or the e2e signed-in-session test-infra gap). Remote D1/R2/deploy steps in DEPLOY_CHECKLIST.md remain unexecuted and un-pushed per the standing stop-before-remote rule.
+- **DECISIONS.md** - one entry per non-obvious judgment call, newest first, each with a "Verified via" line. The actual history of *why* things are built the way they are.
+- **BACKLOG.md** - specific, real, deliberately-deferred gaps with enough context to pick each one up cold.
+- **DEPLOY_CHECKLIST.md** - the manual, non-automated steps (remote D1 migrations, R2 bucket operations) that a push never runs on its own.
