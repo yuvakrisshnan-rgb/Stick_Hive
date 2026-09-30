@@ -12,6 +12,7 @@ import {
   Download,
   ExternalLink,
   Image as ImageIcon,
+  Lightbulb,
   ListOrdered,
   Loader2,
   Package,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 
 import AnalyticsPanel from "./analytics-panel";
+import InsightsPanel from "./insights-panel";
 
 // StoredOrder/StoredOrderItem are the locked, authoritative Order contract —
 // see src/types/order.ts. Aliased to the names this file already used.
@@ -52,7 +54,7 @@ function imageHref(imageUrl: string) {
 export default function AdminPage() {
   const router = useRouter();
   const { logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<"orders" | "analytics">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "analytics" | "insights">("orders");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -413,11 +415,24 @@ export default function AdminPage() {
           >
             <BarChart3 size={15} /> Analytics
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("insights")}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold ${activeTab === "insights" ? "bg-black text-white" : "bg-white text-black/60 hover:bg-black/5"}`}
+          >
+            <Lightbulb size={15} /> Insights
+          </button>
         </div>
 
         {activeTab === "analytics" && (
           <div className="mt-8">
             <AnalyticsPanel />
+          </div>
+        )}
+
+        {activeTab === "insights" && (
+          <div className="mt-8">
+            <InsightsPanel />
           </div>
         )}
 
