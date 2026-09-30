@@ -2,16 +2,15 @@
 
 Open items discovered or deliberately deferred during this session. Not a roadmap - a list of specific, real gaps with enough context to pick each one up cold. See STATUS.md for what's currently done, DECISIONS.md for why things were built the way they were.
 
-## Pre-existing lint debt (deferred from the 2026-09-21 bug hunt)
+## Pre-existing lint debt
 
-Confirmed via `git diff` to be outside every line touched this session - not introduced by this work, just surfaced by linting the files it touched.
+**2026-09-30 - the original 4-item list (deferred from the 2026-09-21 bug hunt) is done, Task 4.1**:
+- `shop-catalog.tsx`'s `setSearch(urlSearch)` bare `useEffect` → converted to the same render-time "adjust state" pattern `category`'s own sync already used (no `useEffect`, no lint violation).
+- `sticker-editor-shell.tsx` - the file itself no longer exists (retired during the 2026-09-22 custom-sticker redesign, see DECISIONS.md) - nothing left to fix.
+- `customer-form.tsx:255,292` - both `any` response types replaced with a real `{ success: boolean; error?: string }` type.
+- `cart-drawer.tsx` - the `window.location.href` navigation converted to `router.push()` (safe now that `custom-sticker/page.tsx` keys `<StickerBuilder>` on `editId`, added in the 2026-09-29 My Designs work specifically for this). The two `no-unused-expressions` warnings turned out to be a **real bug**, not just style: `const canIncrease = line.quantity \n MAX_CART_QUANTITY;` was missing its `<` operator entirely - ASI silently split it into two statements, so `canIncrease` was always just `line.quantity` itself (always truthy), meaning the cart's "+" quantity button never actually disabled at `MAX_CART_QUANTITY`. Fixed in both places it was duplicated (regular + custom-sticker cart lines) and verified live - `+` now correctly disables at quantity 10.
 
-- `src/components/shop/shop-catalog.tsx:314` (line shifted by the 2026-09-25 pagination/category-URL work below; same pre-existing issue) - `setSearch(urlSearch)` called directly inside a bare `useEffect` (`react-hooks/set-state-in-effect`). The two *new* state syncs added in that same file (`category` from `?category=`, and resetting pagination on filter change) use the render-time "adjust state" pattern instead, specifically to avoid adding more of this.
-- `src/components/custom-sticker/sticker-editor-shell.tsx:61` - `setSheetExpanded(true)` called directly inside a bare `useEffect`, same rule.
-- `src/components/checkout/customer-form.tsx:255,292` - two `@typescript-eslint/no-explicit-any` errors.
-- `src/components/cart/cart-drawer.tsx:541,610,916` - one `no-location-assign-relative-destination` warning (`window.location.href` for an internal nav - should be `useRouter().push()`), two `no-unused-expressions` warnings.
-
-**2026-09-30 addition, not part of the 4 above (different discovery, same rule)**: `src/app/admin/analytics-panel.tsx:210` and `src/app/admin/insights-panel.tsx:107` (new file, added this session) both have `useEffect(() => { void load(); }, [])` - the exact same `react-hooks/set-state-in-effect` shape as the shop-catalog.tsx/sticker-editor-shell.tsx findings above, just in the admin panels' "fetch once on mount" pattern. Left `insights-panel.tsx` consistent with its sibling `analytics-panel.tsx` rather than fixing one and not the other - a real fix here means restructuring how both panels' initial fetch fires (not a one-line change, since the `load()` function is also reused by the Refresh button), worth doing together as its own pass rather than ad hoc.
+**Still open, same rule, different discovery (2026-09-30)**: `src/app/admin/analytics-panel.tsx:210` and `src/app/admin/insights-panel.tsx:107` both have `useEffect(() => { void load(); }, [])` - the same `react-hooks/set-state-in-effect` shape as the fixed items above, just in the admin panels' "fetch once on mount" pattern. Left `insights-panel.tsx` consistent with its sibling `analytics-panel.tsx` rather than fixing one and not the other - a real fix here means restructuring how both panels' initial fetch fires (not a one-line change, since the `load()` function is also reused by the Refresh button), worth doing together as its own pass.
 
 ## Test infrastructure
 

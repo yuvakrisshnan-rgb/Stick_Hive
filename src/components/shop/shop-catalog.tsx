@@ -195,6 +195,23 @@ export default function ShopCatalog({
     useState(urlSearch)
 
 
+  // Adjust `search` when `urlSearch` changes, without a useEffect - same
+  // render-time "adjust state" pattern `category` below already uses
+  // (React docs recommend this over an effect: it runs during render,
+  // bailing out before paint, instead of committing once, running an
+  // effect, then committing again).
+  const [lastSyncedUrlSearch, setLastSyncedUrlSearch] =
+    useState(urlSearch)
+
+  if (urlSearch !== lastSyncedUrlSearch) {
+
+    setLastSyncedUrlSearch(urlSearch)
+
+    setSearch(urlSearch)
+
+  }
+
+
   // ==========================================================================
   // URL CATEGORY
   // ==========================================================================
@@ -303,17 +320,6 @@ export default function ShopCatalog({
 
   const [filtersOpen, setFiltersOpen] =
     useState(false)
-
-
-  // ==========================================================================
-  // SYNCHRONIZE SEARCH WITH NAVBAR / URL
-  // ==========================================================================
-
-  useEffect(() => {
-
-    setSearch(urlSearch)
-
-  }, [urlSearch])
 
 
   // ==========================================================================
@@ -1613,7 +1619,7 @@ function SortDropdown({
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isOpen])
 
   return (

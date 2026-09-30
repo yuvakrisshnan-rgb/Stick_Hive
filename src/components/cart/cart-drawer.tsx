@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 
 
@@ -44,6 +45,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 
 export default function CartDrawer() {
   const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
 
   const {
     isCartOpen,
@@ -597,8 +599,15 @@ export default function CartDrawer() {
                             onEdit={() => {
                               closeCart();
 
-                              window.location.href =
-                                `/custom-sticker?edit=${encodeURIComponent(line.id)}`;
+                              // custom-sticker/page.tsx keys <StickerBuilder>
+                              // on editId specifically so this client-side
+                              // navigation correctly resets the canvas to
+                              // the new design - see DECISIONS.md's
+                              // 2026-09-29 My Designs entry for why that
+                              // was a prerequisite for this change.
+                              router.push(
+                                `/custom-sticker?edit=${encodeURIComponent(line.id)}`,
+                              );
                             }}
                           />
                         ),
@@ -665,7 +674,7 @@ function CartItem({
 }) {
 
   const canIncrease =
-    line.quantity 
+    line.quantity <
     MAX_CART_QUANTITY;
 
 
@@ -971,7 +980,7 @@ function CustomCartItem({
 }) {
 
   const canIncrease =
-    line.quantity 
+    line.quantity <
     MAX_CART_QUANTITY;
 
 

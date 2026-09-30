@@ -2,6 +2,16 @@
 
 One entry per non-obvious judgment call, newest first. Only verified facts go here — see each entry's "Verified via" line.
 
+## 2026-09-30 — Fixed the 4 tracked lint issues, found a real bug doing it (Task 4.1)
+
+`sticker-editor-shell.tsx` no longer exists (retired 2026-09-22) - nothing to fix there, just removed from BACKLOG.md. `shop-catalog.tsx`'s search sync converted to the same render-time "adjust state" pattern already used for `category`. `customer-form.tsx`'s two `any` response types replaced with a real type.
+
+`cart-drawer.tsx`'s `window.location.href` → `router.push()` conversion was only safe because of a prerequisite laid down during the 2026-09-29 My Designs work (`key={editId}` on `<StickerBuilder>`) - noted there at the time specifically for this.
+
+**The two `no-unused-expressions` warnings in `cart-drawer.tsx` turned out to be a real, live bug, not a style nit**: `const canIncrease = line.quantity \n MAX_CART_QUANTITY;` - the `<` operator was missing entirely. Automatic semicolon insertion silently split this into two statements (`line.quantity;` then `MAX_CART_QUANTITY;`, the second being the actual "unused expression" ESLint was flagging), so `canIncrease` was always just assigned `line.quantity` itself - a number, always truthy for any real cart line - never a real less-than check. The cart's "+" quantity button (`disabled={!canIncrease}`) consequently never disabled at `MAX_CART_QUANTITY`, in either of the two places this exact code was duplicated (regular product lines and custom-sticker lines). Fixed both; verified live by seeding a cart line at quantity 10 and confirming the `+` button is now genuinely `disabled`.
+
+**Verified via**: full pre-push gate clean. Live checks against the real dev server (not just reads): `/shop?search=` still filters correctly after the `useEffect`→render-time conversion; the cart-drawer `+`-button fix confirmed both via `isDisabled()` and a screenshot; the `router.push()` conversion confirmed via `waitForURL` showing a genuine client-side navigation (no full reload) to `/custom-sticker?edit=<id>`.
+
 ## 2026-09-30 — Background-removal stress test (1.5), morphological-close spot-check (1.6), homepage category showcase (2.2)
 
 **Task 1.5**: `/dev/bg-removal-test` already existed (eval-JIT patch `6398ae9`) with 6 synthetic fixtures exercising fine edges, translucency, one low-contrast direction, multi-subject ambiguity, a clean baseline, and extreme thin detail. Extended it with 6 more, covering failure modes none of the original 6 touched: dark-on-dark contrast (the opposite lighting direction from the existing low-contrast fixture), backlit/silhouette lighting, a textured/patterned background (distinct from the existing smooth gradient), a subject with a real topological hole, a subject cropped at the frame edge, and a small subject in a mostly-empty frame. 12 fixtures x 2 precisions = 24 runs.
