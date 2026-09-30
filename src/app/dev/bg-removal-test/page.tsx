@@ -11,9 +11,12 @@
 // other:
 //
 //   1. The real ML pipeline (@imgly/background-removal), fast vs. high
-//      precision, against 6 synthetic fixture images chosen to exercise
+//      precision, against 12 synthetic fixture images chosen to exercise
 //      real failure modes (fine branching edges, translucency, low
-//      contrast, multiple subjects). Records success/failure and timing —
+//      contrast in both lighting directions, backlit silhouettes, a
+//      textured background, multiple subjects, a subject with a real
+//      hole, edge-cropped and small subjects, and extreme thin detail).
+//      Records success/failure and timing —
 //      this app's CSP deliberately omits 'unsafe-eval' (see next.config.ts),
 //      so @imgly's model call is known to fail intermittently as a
 //      documented, accepted trade-off; this self-test surfaces exactly how
@@ -173,6 +176,113 @@ const FIXTURES: Fixture[] = [
         ctx.lineTo(size / 2 + Math.cos(angle) * outerR, size / 2 + Math.sin(angle) * outerR);
         ctx.stroke();
       }
+    },
+  },
+
+  // --------------------------------------------------------------------
+  // 2026-09-29 stress-test additions (Task 1.5) - the original 6 fixtures
+  // above cover fine edges, translucency, one low-contrast direction,
+  // multi-subject ambiguity, a clean baseline, and extreme thin detail.
+  // These add failure modes none of those exercise: dark-on-dark contrast
+  // (the opposite lighting direction from the existing light-on-light
+  // low-contrast case), backlit/silhouette lighting, a textured/patterned
+  // background (distinct from the existing smooth gradient), a subject
+  // with a real topological hole, a subject cropped at the frame edge,
+  // and a subject occupying only a small fraction of the frame.
+  // --------------------------------------------------------------------
+
+  {
+    id: "dark-on-dark",
+    label: "Dark subject on dark background",
+    scenario: "Low contrast in the opposite lighting direction from the existing light-on-light case - a dark subject against a near-black background, the way a night photo or dark clothing on a dark backdrop would look.",
+    draw: (ctx, size) => {
+      ctx.fillStyle = "#1c1a17";
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = "#2e2a24";
+      ctx.beginPath();
+      ctx.roundRect(size * 0.3, size * 0.22, size * 0.4, size * 0.56, 30);
+      ctx.fill();
+    },
+  },
+  {
+    id: "backlit-silhouette",
+    label: "Backlit silhouette",
+    scenario: "A much darker subject against a bright light source/sky - the opposite failure mode from low-contrast: high contrast but the subject reads as a near-black cutout with a bright rim, which can confuse edge color decontamination.",
+    draw: (ctx, size) => {
+      const gradient = ctx.createRadialGradient(size / 2, size * 0.35, size * 0.05, size / 2, size * 0.35, size * 0.75);
+      gradient.addColorStop(0, "#fff6d8");
+      gradient.addColorStop(1, "#f0a94e");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = "#120e08";
+      ctx.beginPath();
+      ctx.ellipse(size / 2, size * 0.42, size * 0.14, size * 0.14, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(size * 0.4, size * 0.52);
+      ctx.lineTo(size * 0.6, size * 0.52);
+      ctx.lineTo(size * 0.68, size * 0.95);
+      ctx.lineTo(size * 0.32, size * 0.95);
+      ctx.closePath();
+      ctx.fill();
+    },
+  },
+  {
+    id: "textured-background",
+    label: "Textured/patterned background",
+    scenario: "A busy checkerboard-like background behind a clean subject - distinct from the existing smooth-gradient translucency fixture, tests whether background texture (not just color) leaks into the mask edge.",
+    draw: (ctx, size) => {
+      const cell = size / 16;
+      for (let y = 0; y < 16; y++) {
+        for (let x = 0; x < 16; x++) {
+          ctx.fillStyle = (x + y) % 2 === 0 ? "#d8cbb0" : "#c2ae86";
+          ctx.fillRect(x * cell, y * cell, cell, cell);
+        }
+      }
+      ctx.fillStyle = "#3f6b4f";
+      ctx.beginPath();
+      ctx.roundRect(size * 0.28, size * 0.28, size * 0.44, size * 0.44, 16);
+      ctx.fill();
+    },
+  },
+  {
+    id: "subject-with-hole",
+    label: "Subject with a real hole (ring/donut)",
+    scenario: "A closed loop with genuine background visible through its center - tests whether the model/mask correctly keeps the interior transparent instead of filling it in as a hole-cleanup false positive.",
+    draw: (ctx, size) => {
+      ctx.fillStyle = "#eef2f6";
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = "#c0392b";
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size * 0.32, 0, Math.PI * 2);
+      ctx.arc(size / 2, size / 2, size * 0.16, 0, Math.PI * 2, true);
+      ctx.fill();
+    },
+  },
+  {
+    id: "edge-cropped-subject",
+    label: "Subject cropped at the frame edge",
+    scenario: "The subject extends past three sides of the frame, like a close-up crop - tests boundary handling when there's no fully-enclosed silhouette to find.",
+    draw: (ctx, size) => {
+      ctx.fillStyle = "#f7f3ea";
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = "#4a4137";
+      ctx.beginPath();
+      ctx.ellipse(size * 0.5, size * 1.05, size * 0.42, size * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+    },
+  },
+  {
+    id: "small-subject",
+    label: "Small subject, mostly background",
+    scenario: "The actual subject occupies a small fraction of the frame - tests whether the model still commits to the small real subject instead of the large empty background region.",
+    draw: (ctx, size) => {
+      ctx.fillStyle = "#e3e9ec";
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = "#d24d57";
+      ctx.beginPath();
+      ctx.arc(size * 0.62, size * 0.58, size * 0.06, 0, Math.PI * 2);
+      ctx.fill();
     },
   },
 ];
@@ -401,7 +511,7 @@ export default function BgRemovalTestPage() {
       <p className="mt-2 max-w-2xl text-sm text-black/60">
         Dev-only baseline for judging background-removal changes. Two independent
         checks: the isolated mask post-processing math (no ML call, deterministic),
-        and the real @imgly/background-removal pipeline against 6 synthetic
+        and the real @imgly/background-removal pipeline against 12 synthetic
         fixtures in both fast and high-precision modes.
       </p>
 
@@ -450,7 +560,7 @@ export default function BgRemovalTestPage() {
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">2. Real pipeline vs. 6 fixtures (fast + high precision)</h2>
+          <h2 className="text-lg font-bold">2. Real pipeline vs. 12 fixtures (fast + high precision)</h2>
           <button
             type="button"
             onClick={runFullSelfTest}

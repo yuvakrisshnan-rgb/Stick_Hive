@@ -17,12 +17,14 @@ import { StickerImage } from "@/components/shop/sticker-image";
 // CATEGORY CONFIGURATION — retinted to StickHive's actual brand palette
 // ============================================================================
 
-// Same note as shop-catalog.tsx's CATEGORIES: the Category union now
-// also includes 6 real-catalogue categories (Bollywood, BTS, flower
-// stickers, Meme stickers, Rick and Morty, Stickers with dialogues), not
-// added to this hand-curated home-page showcase yet - each entry here is
-// bespoke marketing copy/color, and none of those 6 have live products
-// to showcase until the shop is wired to D1.
+// 2026-09-29: added the 6 real-catalogue categories below (Bollywood,
+// BTS, flower stickers, Meme stickers, Rick and Morty, Stickers with
+// dialogues) - each `name` is the EXACT Category union string (verbatim,
+// not a nicer display rename), since it's also what CategoryProduct's
+// "Explore" link builds `/shop?category=` from, and shop-catalog.tsx's
+// resolveCategoryParam does an exact (non-normalized) string match
+// against CATEGORIES - a cosmetically different name here would silently
+// fall back to "All" on click instead of actually filtering.
 const CATEGORY_CONFIG = [
   {
     id: "anime",
@@ -75,6 +77,84 @@ const CATEGORY_CONFIG = [
     ctaBg: "bg-hive-yellow",
     ctaText: "text-black",
     slug: "technology",
+  },
+  {
+    id: "bollywood",
+    name: "Bollywood",
+    description:
+      "Drama, dance numbers and dialogues you can't help but quote.",
+    color: "bg-[#B8285F]",
+    textColor: "text-white",
+    mutedText: "text-white/70",
+    badgeText: "text-hive-yellow",
+    ctaBg: "bg-hive-yellow",
+    ctaText: "text-black",
+    slug: "bollywood",
+  },
+  {
+    id: "bts",
+    name: "BTS",
+    description:
+      "For the Army - bias sets, lyrics and purple-hearted fandom love.",
+    color: "bg-[#5B4B8A]",
+    textColor: "text-white",
+    mutedText: "text-white/70",
+    badgeText: "text-hive-yellow",
+    ctaBg: "bg-hive-yellow",
+    ctaText: "text-black",
+    slug: "bts",
+  },
+  {
+    id: "flower-stickers",
+    name: "flower stickers",
+    description:
+      "Soft, blooming designs for journals, water bottles and windows.",
+    color: "bg-[#FBD6E3]",
+    textColor: "text-ink",
+    mutedText: "text-black/60",
+    badgeText: "text-black/55",
+    ctaBg: "bg-black",
+    ctaText: "text-white",
+    slug: "flower-stickers",
+  },
+  {
+    id: "meme-stickers",
+    name: "Meme stickers",
+    description:
+      "Unhinged reactions and inside jokes, ready to slap on anything.",
+    color: "bg-[#FF5D5D]",
+    textColor: "text-white",
+    mutedText: "text-white/75",
+    badgeText: "text-hive-yellow",
+    ctaBg: "bg-hive-yellow",
+    ctaText: "text-black",
+    slug: "meme-stickers",
+  },
+  {
+    id: "rick-and-morty",
+    name: "Rick and Morty",
+    description:
+      "Interdimensional chaos, portal-green and Wubba Lubba Dub Dub energy.",
+    color: "bg-[#7ED321]",
+    textColor: "text-ink",
+    mutedText: "text-black/60",
+    badgeText: "text-black/55",
+    ctaBg: "bg-black",
+    ctaText: "text-white",
+    slug: "rick-and-morty",
+  },
+  {
+    id: "stickers-with-dialogues",
+    name: "Stickers with dialogues",
+    description:
+      "Say it without saying it - punchy one-liners for every mood.",
+    color: "bg-[#BFE3F5]",
+    textColor: "text-ink",
+    mutedText: "text-black/60",
+    badgeText: "text-black/55",
+    ctaBg: "bg-black",
+    ctaText: "text-white",
+    slug: "stickers-with-dialogues",
   },
 ];
 
