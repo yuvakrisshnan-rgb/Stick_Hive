@@ -65,6 +65,9 @@ export default function CartDrawer() {
     removeCustomStickerFromCart,
 
     clearAllCart,
+
+    removedCartItems,
+    dismissRemovedCartNotice,
   } = useShop();
 
 
@@ -321,6 +324,62 @@ export default function CartDrawer() {
               </button>
 
             </div>
+
+
+            {/* ============================================================
+                REMOVED-ITEM NOTICE — sanitizeCart() (store-provider.tsx)
+                used to drop an unresolvable/out-of-stock/invalid cart line
+                silently on load, with nothing telling the shopper it ever
+                happened. Dismissible, not blocking anything below it.
+            ============================================================ */}
+
+            {removedCartItems.length > 0 && (
+              <div
+                role="status"
+                className="
+                  mx-4
+                  mt-4
+                  flex
+                  items-start
+                  gap-3
+                  rounded-2xl
+                  border
+                  border-amber-200
+                  bg-amber-50
+                  px-4
+                  py-3
+                  text-sm
+                "
+              >
+                <div className="min-w-0 flex-1 text-amber-900">
+                  {removedCartItems.length === 1 ? (
+                    <p>
+                      <span className="font-bold">{removedCartItems[0]}</span> was removed from your cart — it&apos;s no longer available.
+                    </p>
+                  ) : (
+                    <p>
+                      <span className="font-bold">{removedCartItems.length} items</span> were removed from your cart — they&apos;re no longer available.
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={dismissRemovedCartNotice}
+                  aria-label="Dismiss"
+                  className="
+                    shrink-0
+                    rounded-full
+                    p-1
+                    text-amber-700
+                    transition
+                    hover:bg-amber-100
+                  "
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            )}
 
 
             {/* ============================================================

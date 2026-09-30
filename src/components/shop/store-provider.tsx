@@ -106,6 +106,12 @@ type ShopContextValue = {
   amountToFreeShipping: number;
   hasFreeShipping: boolean;
 
+  // Names of cart lines dropped by sanitizeCart() on the most recent load
+  // (product no longer available, out of stock, or its saved size no
+  // longer offered) - empty once dismissed or when nothing was dropped.
+  removedCartItems: string[];
+  dismissRemovedCartNotice: () => void;
+
   addToCart: (
     productId: string,
     size: StickerSize,
@@ -222,15 +228,32 @@ function isValidProduct(
 }
 
 
+// Sanitization drops a line for several distinct reasons (product id no
+// longer resolves against the current catalog at all, product resolves but
+// is out of stock, the saved size isn't one the product actually offers,
+// or a malformed quantity/shape). Previously every one of those was a
+// silent `continue` - the line just vanished from the cart with nothing
+// telling the shopper it ever happened. `removed` collects a best-effort
+// display name per dropped line (the product's real name when it still
+// resolves in the catalog - out-of-stock/size cases - or a generic
+// fallback when the id doesn't resolve at all, since there's no name left
+// to show). ShopProvider surfaces this as a dismissible notice rather than
+// blocking anything - see cart-drawer.tsx.
+type SanitizeCartResult = {
+  cleaned: CartLine[];
+  removed: string[];
+};
+
 function sanitizeCart(
   value: unknown,
   productById: Map<string, Product>,
-): CartLine[] {
+): SanitizeCartResult {
   if (!Array.isArray(value)) {
-    return [];
+    return { cleaned: [], removed: [] };
   }
 
   const cleaned: CartLine[] = [];
+  const removed: string[] = [];
 
   for (const item of value) {
     if (
@@ -245,6 +268,7 @@ function sanitizeCart(
     if (
       !isValidProduct(line.productId, productById)
     ) {
+      removed.push("An item");
       continue;
     }
 
@@ -252,6 +276,7 @@ function sanitizeCart(
       productById.get(line.productId);
 
     if (!product || !product.inStock) {
+      removed.push(product?.name ?? "An item");
       continue;
     }
 
@@ -261,6 +286,7 @@ function sanitizeCart(
         line.size as StickerSize,
       )
     ) {
+      removed.push(product.name);
       continue;
     }
 
@@ -268,6 +294,7 @@ function sanitizeCart(
       typeof line.quantity !== "number" ||
       !Number.isFinite(line.quantity)
     ) {
+      removed.push(product.name);
       continue;
     }
 
@@ -302,7 +329,7 @@ function sanitizeCart(
     }
   }
 
-  return cleaned;
+  return { cleaned, removed };
 }
 
 
@@ -424,6 +451,13 @@ export function ShopProvider({
   const [hydrated, setHydrated] =
     useState(false);
 
+  // Names of cart lines sanitizeCart() dropped on this load (product no
+  // longer resolves, out of stock, saved size no longer offered) - surfaced
+  // as a dismissible notice (cart-drawer.tsx) instead of the items just
+  // silently vanishing with no explanation. Cleared by dismissRemovedCartNotice.
+  const [removedCartItems, setRemovedCartItems] =
+    useState<string[]>([]);
+
   // Flips once the /api/products fetch below has settled - success or
   // failure, either way we then know the real catalog to trust. The
   // INITIAL LOAD effect further down waits for this before reading
@@ -517,8 +551,10 @@ export function ShopProvider({
 
     initialLoadDone.current = true;
 
-    const savedCart =
+    const { cleaned: savedCart, removed: removedNames } =
       sanitizeCart(loadCart(), productById);
+
+    setRemovedCartItems(removedNames);
 
     const savedCustomCart =
       sanitizeCustomCart(
@@ -747,6 +783,11 @@ export function ShopProvider({
     useCallback(() => {
       setCart([]);
       clearStoredCart();
+    }, []);
+
+  const dismissRemovedCartNotice =
+    useCallback(() => {
+      setRemovedCartItems([]);
     }, []);
 
 
@@ -1220,6 +1261,10 @@ export function ShopProvider({
 
         hasFreeShipping,
 
+        removedCartItems,
+
+        dismissRemovedCartNotice,
+
         addToCart,
 
         updateQuantity,
@@ -1270,6 +1315,8 @@ export function ShopProvider({
         cartTotal,
         amountToFreeShipping,
         hasFreeShipping,
+        removedCartItems,
+        dismissRemovedCartNotice,
         addToCart,
         updateQuantity,
         removeFromCart,
