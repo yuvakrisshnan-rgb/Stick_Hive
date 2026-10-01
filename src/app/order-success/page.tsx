@@ -292,6 +292,9 @@ function OrderSuccessContent() {
   const [isConfirmingRazorpay, setIsConfirmingRazorpay] = useState(false);
   const [razorpayError, setRazorpayError] = useState("");
 
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [invoiceError, setInvoiceError] = useState("");
+
 
   // ==========================================================================
   // LOAD ORDER
@@ -714,7 +717,7 @@ function OrderSuccessContent() {
   // DOWNLOAD INVOICE
   // ==========================================================================
 
-  function handleDownloadInvoice() {
+  async function handleDownloadInvoice() {
 
     /*
      * The order system stores the address
@@ -782,9 +785,20 @@ function OrderSuccessContent() {
     };
 
 
-    generateInvoice(
-      invoiceOrder,
-    );
+    setInvoiceError("");
+    setIsGeneratingInvoice(true);
+
+    try {
+      await generateInvoice(
+        invoiceOrder,
+      );
+    } catch {
+      setInvoiceError(
+        "Couldn't generate your invoice just now - please try again in a moment.",
+      );
+    } finally {
+      setIsGeneratingInvoice(false);
+    }
   }
 
 
@@ -1718,33 +1732,57 @@ function OrderSuccessContent() {
           {/* DOWNLOAD INVOICE                                                  */}
           {/* ================================================================= */}
 
-          <button
-            type="button"
-            onClick={
-              handleDownloadInvoice
-            }
-            className="
-              flex
-              items-center
-              justify-center
-              gap-2
-              rounded-full
-              bg-hive-yellow
-              py-4
-              font-bold
-              transition
-              hover:scale-[1.02]
-              active:scale-[0.98]
-            "
-          >
+          <div>
 
-            Download Invoice
+            <button
+              type="button"
+              disabled={
+                isGeneratingInvoice
+              }
+              onClick={
+                handleDownloadInvoice
+              }
+              className="
+                flex
+                w-full
+                items-center
+                justify-center
+                gap-2
+                rounded-full
+                bg-hive-yellow
+                py-4
+                font-bold
+                transition
+                hover:scale-[1.02]
+                active:scale-[0.98]
+                disabled:cursor-not-allowed
+                disabled:opacity-60
+                disabled:hover:scale-100
+              "
+            >
 
-            <Download
-              size={18}
-            />
+              {isGeneratingInvoice
+                ? "Generating…"
+                : "Download Invoice"}
 
-          </button>
+              {isGeneratingInvoice ? (
+                <Loader2
+                  size={18}
+                  className="animate-spin"
+                />
+              ) : (
+                <Download
+                  size={18}
+                />
+              )}
+
+            </button>
+
+            {invoiceError && (
+              <p className="mt-3 text-center text-sm font-semibold text-red-600">{invoiceError}</p>
+            )}
+
+          </div>
 
 
           {/* ================================================================= */}

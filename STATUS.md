@@ -30,6 +30,8 @@ D1 migrations are deliberately **not** run by the workflow - `wrangler d1 migrat
 
 **Shop** (`/shop`): paginated (24 per page + infinite scroll, added 2026-09-25 once the catalogue grew past 200 products), real URL-addressable `?category=` filter.
 
+**Customer invoice** (`order-success`'s "Download Invoice" button, `src/lib/invoice-generator.ts`): redesigned 2026-10-02 - real brand palette/typography, a payment-status badge that actually reflects the order's real status (was hardcoded "confirmed" regardless), product thumbnails in the line-item table with a graceful fallback when one fails to load, a real functional QR linking to the order's track-order page (was a dead placeholder image), multi-page-safe (totals/QR/footer never run off the page edge on a long order), and a much smaller file size (logo was previously embedded at full 1024x1024 resolution). See DECISIONS.md for the full list of bugs this surfaced and fixed.
+
 ## Known gaps / explicitly not done
 
 - **Review queue has no image-serving path** - the 87 `needs_review=1` rows have no `image_url` (R2 upload only runs for `status='active'` rows). A review-queue admin UI needs this solved first - see BACKLOG.md.
