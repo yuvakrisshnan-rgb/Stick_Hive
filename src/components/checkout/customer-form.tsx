@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, Mail } from "lucide-react";
 
 import {
   lookupPincode,
@@ -56,8 +56,6 @@ type CustomerFormProps = {
   customer: CustomerData;
   setCustomer: Dispatch<SetStateAction<CustomerData>>;
   errors: CustomerErrors;
-  emailVerified: boolean;
-  onEmailVerified: (verified: boolean) => void;
 };
 
 
@@ -114,8 +112,6 @@ export default function CustomerForm({
   customer,
   setCustomer,
   errors,
-  emailVerified,
-  onEmailVerified,
 }: CustomerFormProps) {
 
 
@@ -131,19 +127,6 @@ export default function CustomerForm({
 
 
   // ==========================================================================
-  // EMAIL OTP STATE
-  // ==========================================================================
-
-  const [otpStage, setOtpStage] = useState<
-    "idle" | "sending" | "sent" | "verifying" | "error"
-  >("idle");
-
-  const [otpCode, setOtpCode] = useState("");
-  const [otpError, setOtpError] = useState("");
-  const [verifiedEmail, setVerifiedEmail] = useState("");
-
-
-  // ==========================================================================
   // UPDATE PERSONAL FIELD
   // ==========================================================================
 
@@ -155,14 +138,6 @@ export default function CustomerForm({
       ...previous,
       [field]: value,
     }));
-
-    // If the email changes after being verified, reset verification.
-    if (field === "email" && verifiedEmail && value !== verifiedEmail) {
-      onEmailVerified(false);
-      setOtpStage("idle");
-      setOtpCode("");
-      setVerifiedEmail("");
-    }
   }
 
 
@@ -227,83 +202,6 @@ export default function CustomerForm({
     } else {
       setPincodeStatus("invalid");
       setPincodeMessage(result.error ?? "Invalid PIN code.");
-    }
-  }
-
-
-  // ==========================================================================
-  // SEND EMAIL OTP
-  // ==========================================================================
-
-  async function handleSendOtp() {
-    if (!isLikelyValidEmail(customer.email)) {
-      setOtpError("Please enter a valid email address first.");
-      setOtpStage("error");
-      return;
-    }
-
-    setOtpStage("sending");
-    setOtpError("");
-
-    try {
-      const response = await fetch("/api/send-email-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: customer.email }),
-      });
-
-      const data = (await response.json()) as { success: boolean; error?: string };
-
-      if (!data.success) {
-        setOtpError(data.error ?? "Unable to send verification code.");
-        setOtpStage("error");
-        return;
-      }
-
-      setOtpStage("sent");
-    } catch (error) {
-      console.error("Failed to send OTP:", error);
-      setOtpError("Something went wrong. Please try again.");
-      setOtpStage("error");
-    }
-  }
-
-
-  // ==========================================================================
-  // VERIFY EMAIL OTP
-  // ==========================================================================
-
-  async function handleVerifyOtp() {
-    if (otpCode.length !== 6) {
-      setOtpError("Enter the 6-digit code sent to your email.");
-      return;
-    }
-
-    setOtpStage("verifying");
-    setOtpError("");
-
-    try {
-      const response = await fetch("/api/verify-email-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: customer.email, code: otpCode }),
-      });
-
-      const data = (await response.json()) as { success: boolean; error?: string };
-
-      if (!data.success) {
-        setOtpError(data.error ?? "Incorrect code.");
-        setOtpStage("sent");
-        return;
-      }
-
-      setVerifiedEmail(customer.email);
-      onEmailVerified(true);
-      setOtpStage("idle");
-    } catch (error) {
-      console.error("Failed to verify OTP:", error);
-      setOtpError("Something went wrong. Please try again.");
-      setOtpStage("sent");
     }
   }
 
@@ -478,103 +376,61 @@ export default function CustomerForm({
               id="checkout-email"
               type="email"
               value={customer.email}
-              onChange={(event) =>
-                updateCustomerField(
-                  "email",
-                  event.target.value,
-                )
-              }
-              disabled={emailVerified}
+              readOnly
+              disabled
               placeholder="you@example.com"
               autoComplete="email"
-              className={`
+              className="
                 h-14
                 w-full
                 rounded-xl
                 border
+                border-black/15
+                bg-black/[0.03]
                 px-5
                 text-base
+                text-black/60
                 outline-none
-                transition
-                placeholder:text-black/40
-                disabled:bg-black/[0.03]
-                disabled:text-black/60
-
-                ${
-                  errors.email
-                    ? "border-red-500 focus:border-red-500"
-                    : "border-black/15 focus:border-black"
-                }
-              `}
+              "
             />
 
-
-            {emailVerified ? (
-
-              <div
-                className="
-                  flex
-                  h-14
-                  shrink-0
-                  items-center
-                  gap-1.5
-                  rounded-xl
-                  bg-green-50
-                  px-4
-                  text-sm
-                  font-bold
-                  text-green-600
-                "
-              >
-                <CheckCircle2 size={17} />
-                Verified
-              </div>
-
-            ) : (
-
-              <button
-                type="button"
-                onClick={handleSendOtp}
-                disabled={
-                  otpStage === "sending" ||
-                  otpStage === "sent" ||
-                  otpStage === "verifying"
-                }
-                className="
-                  flex
-                  h-14
-                  shrink-0
-                  items-center
-                  gap-2
-                  rounded-xl
-                  bg-black
-                  px-5
-                  text-sm
-                  font-bold
-                  text-white
-                  transition
-                  hover:scale-[1.02]
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
-                  disabled:hover:scale-100
-                "
-              >
-
-                {otpStage === "sending" && (
-                  <Loader2 size={15} className="animate-spin" />
-                )}
-
-                {otpStage === "sending"
-                  ? "Sending..."
-                  : otpStage === "sent"
-                    ? "Code Sent"
-                    : "Verify"}
-
-              </button>
-
-            )}
+            <div
+              className="
+                flex
+                h-14
+                shrink-0
+                items-center
+                gap-1.5
+                rounded-xl
+                bg-green-50
+                px-4
+                text-sm
+                font-bold
+                text-green-600
+              "
+            >
+              <CheckCircle2 size={17} />
+              Verified
+            </div>
 
           </div>
+
+
+          <p
+            className="
+              mt-2
+              flex
+              items-center
+              gap-1.5
+              px-1
+              text-xs
+              font-medium
+              text-black/40
+            "
+          >
+            <Mail size={13} />
+            This is the email address for your signed-in Stick Hive account.
+          </p>
 
 
           {errors.email && (
@@ -588,120 +444,6 @@ export default function CustomerForm({
               "
             >
               {errors.email}
-            </p>
-          )}
-
-
-          {/* ================================================================ */}
-          {/* OTP CODE INPUT                                                    */}
-          {/* ================================================================ */}
-
-          {(otpStage === "sent" || otpStage === "verifying") && !emailVerified && (
-
-            <div
-              className="
-                mt-3
-                flex
-                items-center
-                gap-2
-                rounded-xl
-                bg-cream
-                p-3
-              "
-            >
-
-              <input
-                type="text"
-                inputMode="numeric"
-                value={otpCode}
-                onChange={(event) =>
-                  setOtpCode(
-                    event.target.value.replace(/\D/g, "").slice(0, 6),
-                  )
-                }
-                placeholder="6-digit code"
-                maxLength={6}
-                className="
-                  h-11
-                  min-w-0
-                  flex-1
-                  rounded-lg
-                  border
-                  border-black/15
-                  bg-white
-                  px-4
-                  text-base
-                  tracking-[0.3em]
-                  outline-none
-                  focus:border-black
-                "
-              />
-
-
-              <button
-                type="button"
-                onClick={handleVerifyOtp}
-                disabled={otpStage === "verifying" || otpCode.length !== 6}
-                className="
-                  flex
-                  h-11
-                  shrink-0
-                  items-center
-                  gap-1.5
-                  rounded-lg
-                  bg-black
-                  px-4
-                  text-sm
-                  font-bold
-                  text-white
-                  transition
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
-                "
-              >
-
-                {otpStage === "verifying" && (
-                  <Loader2 size={14} className="animate-spin" />
-                )}
-
-                Confirm
-
-              </button>
-
-
-              <button
-                type="button"
-                onClick={handleSendOtp}
-                disabled={otpStage === "verifying"}
-                className="
-                  shrink-0
-                  text-xs
-                  font-bold
-                  text-black/50
-                  underline
-                  underline-offset-2
-                  hover:text-black
-                "
-              >
-                Resend
-              </button>
-
-            </div>
-
-          )}
-
-
-          {otpError && (
-            <p
-              className="
-                mt-2
-                px-1
-                text-sm
-                font-medium
-                text-red-500
-              "
-            >
-              {otpError}
             </p>
           )}
 

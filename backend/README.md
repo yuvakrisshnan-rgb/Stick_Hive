@@ -20,7 +20,7 @@ The `backend/` directory contains server-only application logic. Next.js route h
 - `GET /api/docs`
 - `GET /api/docs/openapi.json`
 
-The older `/api/send-email-otp` and `/api/verify-email-otp` routes are retained as compatibility adapters for the current frontend. No frontend code is modified in this phase.
+The older `/api/send-email-otp` and `/api/verify-email-otp` compatibility adapters were removed 2026-10-02 once checkout stopped running its own embedded OTP step (it was just the sign-in OTP under a different URL) - see DECISIONS.md. The canonical routes (`/api/auth/send-otp`, `/api/auth/verify-otp`) are the only way to run that flow now.
 
 ## Storage
 

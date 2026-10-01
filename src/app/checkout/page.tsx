@@ -12,6 +12,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  Loader2,
   LockKeyhole,
   Package,
   ShieldCheck,
@@ -24,6 +25,8 @@ import CustomerForm, {
   type CustomerErrors,
   validateCustomer,
 } from "@/components/checkout/customer-form";
+
+import { useAuth } from "@/components/auth/auth-provider";
 
 import { useShop } from "@/components/shop/store-provider";
 
@@ -63,6 +66,20 @@ const INITIAL_CUSTOMER: CustomerData = {
 export default function CheckoutPage() {
 
   // ==========================================================================
+  // AUTH
+  // ==========================================================================
+  // Checkout no longer runs its own email-OTP step - that step IS the
+  // account sign-in OTP (same backend functions, see backend/auth/service.ts),
+  // so a shopper who already signed in via the navbar is already verified.
+  // Checkout just trusts the session instead of re-running it.
+
+  const {
+    user,
+    loading: authLoading,
+  } = useAuth();
+
+
+  // ==========================================================================
   // SHOP
   // ==========================================================================
 
@@ -96,26 +113,22 @@ export default function CheckoutPage() {
   );
 
 
-  // ==========================================================================
-  // EMAIL VERIFICATION
-  // ==========================================================================
-
-  const [
-    emailVerified,
-    setEmailVerified,
-  ] = useState(false);
+  // The checkout email is always the signed-in account's own verified
+  // address - it's never re-entered or re-verified here, and never stored
+  // as separate mutable state that would need syncing. Derived at render
+  // time instead of via an effect.
+  const customerEmail = user?.email ?? "";
 
 
   // ==========================================================================
   // PAYMENT METHOD
   // ==========================================================================
-  // Razorpay is the default/primary path; UPI-direct remains as a fallback,
-  // e.g. if Razorpay isn't configured in this environment.
+  // Razorpay is now the only checkout path - it already offers UPI apps,
+  // cards and netbanking inside its own checkout, confirmed automatically
+  // via a signed webhook. The old hand-rolled UPI flow (QR code, "I've
+  // paid", manual admin verification) is no longer offered to new orders.
 
-  const [
-    paymentMethod,
-    setPaymentMethod,
-  ] = useState<"razorpay" | "upi">("razorpay");
+  const paymentMethod = "razorpay" as const;
 
   const [
     razorpayEnabled,
@@ -129,13 +142,9 @@ export default function CheckoutPage() {
       .then((data) => {
         if (!active) return;
         setRazorpayEnabled(Boolean(data?.enabled));
-        if (!data?.enabled) setPaymentMethod("upi");
       })
       .catch(() => {
-        if (active) {
-          setRazorpayEnabled(false);
-          setPaymentMethod("upi");
-        }
+        if (active) setRazorpayEnabled(false);
       });
     return () => {
       active = false;
@@ -209,6 +218,37 @@ export default function CheckoutPage() {
       cartLines,
       customCartLines,
     ]);
+
+
+  // ==========================================================================
+  // AUTH LOADING
+  // ==========================================================================
+  // Every hook above this point must run unconditionally on every render,
+  // so this - and every other early return - comes after all of them.
+
+  if (authLoading) {
+
+    return (
+      <main
+        className="
+          flex
+          min-h-screen
+          items-center
+          justify-center
+          bg-cream
+          px-6
+          py-32
+        "
+      >
+
+        <Loader2
+          size={30}
+          className="animate-spin text-black/40"
+        />
+
+      </main>
+    );
+  }
 
 
   // ==========================================================================
@@ -352,6 +392,158 @@ export default function CheckoutPage() {
   }
 
 
+  // ==========================================================================
+  // SIGN IN REQUIRED
+  // ==========================================================================
+  // The old "Verify Email To Continue" OTP step inside this form WAS the
+  // sign-in OTP under a different URL - see backend/auth/service.ts. Now
+  // that it's gone from here, a shopper has to actually be signed in
+  // (via the same navbar OTP flow) before they can reach the checkout
+  // form at all, since there's otherwise no account for the order to
+  // attach to.
+
+  if (!user) {
+
+    return (
+      <main
+        className="
+          min-h-screen
+          bg-cream
+          px-6
+          pb-20
+          pt-32
+        "
+      >
+
+        <div
+          className="
+            mx-auto
+            max-w-3xl
+          "
+        >
+
+          <Link
+            href="/shop"
+            className="
+              inline-flex
+              items-center
+              gap-2
+              text-sm
+              font-semibold
+              text-black/60
+              transition
+              hover:text-black
+            "
+          >
+
+            <ArrowLeft
+              size={16}
+            />
+
+            Back to Shop
+
+          </Link>
+
+
+          <section
+            className="
+              mt-10
+              rounded-[2.5rem]
+              bg-white
+              p-10
+              text-center
+              shadow-xl
+              md:p-14
+            "
+          >
+
+            <div
+              className="
+                mx-auto
+                flex
+                size-20
+                items-center
+                justify-center
+                rounded-full
+                bg-hive-yellow
+              "
+            >
+
+              <LockKeyhole
+                size={34}
+              />
+
+            </div>
+
+
+            <h1
+              className="
+                mt-7
+                text-3xl
+                font-extrabold
+              "
+            >
+              Sign in to checkout
+            </h1>
+
+
+            <p
+              className="
+                mx-auto
+                mt-3
+                max-w-md
+                text-black/50
+              "
+            >
+              Your Stick Hive order is tied to your account,
+              so we need you signed in before you can pay.
+              It&apos;s just the same one-time email code.
+            </p>
+
+
+            <button
+              type="button"
+              onClick={() => {
+                (
+                  window as Window & {
+                    __stickHiveOpenAuth?: () => void;
+                  }
+                ).__stickHiveOpenAuth?.();
+              }}
+              className="
+                mt-8
+                inline-flex
+                items-center
+                justify-center
+                gap-2
+                rounded-full
+                bg-black
+                px-7
+                py-4
+                font-bold
+                text-white
+                transition
+                hover:scale-[1.02]
+              "
+            >
+
+              Sign In to Continue
+
+              <ArrowRight
+                size={18}
+              />
+
+            </button>
+
+          </section>
+
+        </div>
+
+      </main>
+    );
+  }
+
+
   // ============================================================================
   // PLACE ORDER
   // ============================================================================
@@ -359,15 +551,15 @@ export default function CheckoutPage() {
   async function handlePlaceOrder() {
     setOrderError("");
 
-    const validationErrors = validateCustomer(customer);
+    const validationErrors = validateCustomer({ ...customer, email: customerEmail });
     setErrors(validationErrors);
 
     if (validationErrors.name || validationErrors.email || validationErrors.phone || validationErrors.address) {
       return;
     }
 
-    if (!emailVerified) {
-      setOrderError("Please verify your email address before placing your order.");
+    if (razorpayEnabled === false) {
+      setOrderError("Payments are temporarily unavailable. Please check back shortly.");
       return;
     }
 
@@ -405,7 +597,7 @@ export default function CheckoutPage() {
           paymentMethod,
           customer: {
             name: customer.name.trim(),
-            email: customer.email.trim().toLowerCase(),
+            email: customerEmail.trim().toLowerCase(),
             phone: customer.phone.replace(/\D/g, ""),
             address: {
               addressLine1: customer.address.addressLine1.trim(),
@@ -573,19 +765,13 @@ export default function CheckoutPage() {
 
             <CustomerForm
               customer={
-                customer
+                { ...customer, email: customerEmail }
               }
               setCustomer={
                 setCustomer
               }
               errors={
                 errors
-              }
-              emailVerified={
-                emailVerified
-              }
-              onEmailVerified={
-                setEmailVerified
               }
             />
 
@@ -959,51 +1145,28 @@ export default function CheckoutPage() {
                 Payment Method
               </p>
 
-              {razorpayEnabled !== false && (
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("razorpay")}
-                  className={
-                    paymentMethod === "razorpay"
-                      ? "w-full rounded-2xl border border-black bg-black p-4 text-left text-white transition"
-                      : "w-full rounded-2xl border border-black/10 p-4 text-left transition hover:bg-black/5"
-                  }
-                >
+              {razorpayEnabled === false ? (
+                <div className="w-full rounded-2xl border border-red-200 bg-red-50 p-4 text-left">
+                  <p className="font-bold text-red-600">Payments are temporarily unavailable</p>
+                  <p className="mt-1 text-xs leading-relaxed text-red-500">
+                    Please check back shortly - we&apos;re not able to take payments right now.
+                  </p>
+                </div>
+              ) : (
+                <div className="w-full rounded-2xl border border-black bg-black p-4 text-left text-white">
                   <div className="flex items-start gap-3">
-                    <div className={paymentMethod === "razorpay" ? "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black" : "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-black/5 text-sm font-black"}>
+                    <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black">
                       ₹
                     </div>
                     <div>
                       <p className="font-bold">Cards, UPI apps &amp; more (Razorpay)</p>
-                      <p className={paymentMethod === "razorpay" ? "mt-1 text-xs leading-relaxed opacity-70" : "mt-1 text-xs leading-relaxed text-black/50"}>
-                        Instant confirmation - no waiting for manual verification. Includes a 2.36% platform fee.
+                      <p className="mt-1 text-xs leading-relaxed opacity-70">
+                        You&apos;ll be taken straight to the secure payment portal next - confirmation is instant, no manual verification. Includes a 2.36% platform fee.
                       </p>
                     </div>
                   </div>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("upi")}
-                className={
-                  paymentMethod === "upi"
-                    ? "w-full rounded-2xl border border-black bg-black p-4 text-left text-white transition"
-                    : "w-full rounded-2xl border border-black/10 p-4 text-left transition hover:bg-black/5"
-                }
-              >
-                <div className="flex items-start gap-3">
-                  <div className={paymentMethod === "upi" ? "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black" : "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-black/5 text-sm font-black"}>
-                    ₹
-                  </div>
-                  <div>
-                    <p className="font-bold">UPI (direct)</p>
-                    <p className={paymentMethod === "upi" ? "mt-1 text-xs leading-relaxed opacity-70" : "mt-1 text-xs leading-relaxed text-black/50"}>
-                      You&apos;ll get a Stick Hive payment QR after your order is created. Verified manually - may take longer to confirm.
-                    </p>
-                  </div>
                 </div>
-              </button>
+              )}
             </div>
 
             {orderError && (
@@ -1039,7 +1202,7 @@ export default function CheckoutPage() {
               }
               disabled={
                 isPlacingOrder ||
-                !emailVerified
+                razorpayEnabled === false
               }
               aria-busy={
                 isPlacingOrder
@@ -1092,10 +1255,10 @@ export default function CheckoutPage() {
 
                 </>
 
-              ) : !emailVerified ? (
+              ) : razorpayEnabled === false ? (
 
                 <span>
-                  Verify Email To Continue
+                  Payments Unavailable
                 </span>
 
               ) : (
@@ -1103,7 +1266,7 @@ export default function CheckoutPage() {
                 <>
 
                   <span>
-                    {paymentMethod === "razorpay" ? "Continue to Payment" : "Place Order with UPI"}
+                    Continue to Payment
                   </span>
 
                   <ArrowRight

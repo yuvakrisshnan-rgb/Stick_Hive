@@ -1,4 +1,17 @@
-﻿import { test, expect } from "@playwright/test";
+﻿import { test, expect, type Page } from "@playwright/test";
+
+// Checkout now requires an actual signed-in session (2026-10-02 - see
+// DECISIONS.md): the old embedded "Verify Email" OTP step turned out to
+// just be the sign-in OTP under a different URL, so it's gone, and a
+// guest can no longer reach the checkout form at all. Mint a real session
+// the same way signed-in-checkout.spec.ts does, rather than reimplementing
+// backend/auth/crypto.ts's signing here too.
+async function signIn(page: Page, email: string) {
+  const response = await page.request.post("/api/dev/mint-session", {
+    data: { email },
+  });
+  expect(response.ok(), "mint-session failed - is AUTH_TEST_SESSION_SEAM=true set in .dev.vars?").toBeTruthy();
+}
 
 // The cart drawer is intentionally auth-gated (cart-drawer.tsx's
 // SignedOutCart - "Your Stick Hive cart is tied to your account so only
@@ -48,7 +61,12 @@ test.describe("Cart", () => {
 });
 
 test.describe("Checkout form validation", () => {
+  // These exercise the delivery-address fields, which are unrelated to
+  // auth - but reaching the checkout form at all now requires a real
+  // signed-in session (see this file's top-of-file comment), so each test
+  // signs in first instead of visiting /checkout as a guest.
   test.beforeEach(async ({ page }) => {
+    await signIn(page, `e2e-checkout-form-${test.info().workerIndex}-${Date.now()}@example.com`);
     await page.goto("/shop");
     await page.locator('a[href^="/shop/"]').first().click();
     await page.getByRole("button", { name: /add to cart/i }).click();
@@ -64,17 +82,6 @@ test.describe("Checkout form validation", () => {
   function checkoutForm(page: import("@playwright/test").Page) {
     return page.getByTestId("checkout-form");
   }
-
-  test("rejects an invalid email format client-side", async ({ page }) => {
-    const emailInput = checkoutForm(page).getByLabel(/email/i);
-    await emailInput.fill("not-an-email");
-    await emailInput.blur();
-
-    const isInvalid = await emailInput.evaluate(
-      (el: HTMLInputElement) => !el.checkValidity(),
-    );
-    expect(isInvalid).toBeTruthy();
-  });
 
   test("rejects a PIN code that doesn't exist", async ({ page }) => {
     const pincodeInput = checkoutForm(page).getByLabel(/pin code/i);
@@ -98,23 +105,13 @@ test.describe("Checkout form validation", () => {
     await expect(checkoutForm(page).getByLabel(/state/i)).not.toHaveValue("", { timeout: 8000 });
   });
 
-  test("blocks placing an order before email verification", async ({ page }) => {
-    const form = checkoutForm(page);
-    await form.getByLabel(/full name/i).fill("Test User");
-    await form.getByLabel(/email/i).fill("test@example.com");
-    await form.getByLabel(/phone/i).fill("9876543210");
-    await form.getByLabel(/address line 1/i).fill("123 Test Street");
-    await form.getByLabel(/pin code/i).fill("110001");
-
-    // Was /verify email|pay/i, unscoped - the checkout page's Razorpay
-    // payment-method list also has a button (accessible name starting
-    // "₹ UPI (direct) You'll get a...") that this loose alternation
-    // apparently also matched, causing a strict-mode violation against 2
-    // elements. The actual disabled-until-verified button - "Verify Email
-    // To Continue" - lives in src/app/checkout/page.tsx itself, outside
-    // customer-form.tsx's checkout-form section, so it isn't scoped to
-    // `form` like the fields above.
-    const payButton = page.getByRole("button", { name: /verify email to continue/i });
-    await expect(payButton).toBeDisabled();
+  test("email field shows the signed-in account's address, locked and already verified", async ({ page }) => {
+    // Checkout no longer has its own email-verify step (nor an editable
+    // email field) - signed-in-checkout.spec.ts covers this in depth; this
+    // just confirms the "Checkout form validation" describe block's own
+    // signed-in fixture produces the same, not a separate regression.
+    const emailInput = checkoutForm(page).getByLabel(/email/i);
+    await expect(emailInput).toBeDisabled();
+    await expect(checkoutForm(page).getByText(/verified/i)).toBeVisible();
   });
 });

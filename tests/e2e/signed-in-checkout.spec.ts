@@ -21,31 +21,25 @@ import { test, expect, type Page } from "@playwright/test";
 // `vinext build` output via `wrangler dev` (Task 4.3) specifically so
 // this is reachable through the normal `npm run test:e2e` command, not
 // just via a manually-started `dev:vinext`.
+//
+// Checkout no longer runs its own email-verification step, and UPI is no
+// longer offered - both changed 2026-10-02 (see DECISIONS.md). Checkout's
+// "Verify Email" step turned out to just be the sign-in OTP under a
+// different URL, so it's gone: a shopper now has to already be signed in
+// (mint-session here, the real navbar OTP flow for a human) before
+// checkout/page.tsx will even render the form, and the email field is
+// then a read-only display of the session's own address. Razorpay is the
+// only payment method now (it already supports UPI apps inside its own
+// checkout and confirms automatically via webhook), so this suite needs
+// RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET set in .dev.vars for the "Continue
+// to Payment" button to be enabled at all - there is no UPI fallback to
+// fall back to anymore.
 
 async function signIn(page: Page, email: string) {
   const response = await page.request.post("/api/dev/mint-session", {
     data: { email },
   });
   expect(response.ok(), "mint-session failed - is AUTH_TEST_SESSION_SEAM=true set in .dev.vars?").toBeTruthy();
-}
-
-// Drives the real checkout email-verification UI (send code, read the
-// debug code back from the actual network response - AUTH_DEBUG_OTP=true
-// makes /api/send-email-otp include it - then type it in), the same way
-// a real buyer would, rather than skipping the step.
-async function verifyCheckoutEmail(page: Page) {
-  const otpResponsePromise = page.waitForResponse((response) => response.url().includes("/api/send-email-otp"));
-
-  await page.getByRole("button", { name: /^verify$/i }).click();
-  const otpResponse = await otpResponsePromise;
-  const otpData = (await otpResponse.json()) as { success: boolean; debugCode?: string };
-  expect(otpData.success, "send-email-otp failed").toBeTruthy();
-  expect(otpData.debugCode, "no debugCode in response - is AUTH_DEBUG_OTP=true set?").toBeTruthy();
-
-  await page.locator('input[placeholder="6-digit code"]').fill(otpData.debugCode!);
-  await page.getByRole("button", { name: /^confirm$/i }).click();
-
-  await expect(page.getByRole("button", { name: /verify email to continue/i })).toHaveCount(0);
 }
 
 test.describe("Signed-in cart/checkout", () => {
@@ -90,7 +84,37 @@ test.describe("Signed-in cart/checkout", () => {
     }
   });
 
-  test("a signed-in shopper can complete a full UPI checkout end to end", async ({ page }) => {
+  test("a signed-in shopper's email is already filled in and locked at checkout", async ({ page }) => {
+    await signIn(page, `e2e-locked-email-${test.info().workerIndex}-${Date.now()}@example.com`);
+
+    await page.goto("/shop");
+    await page.locator('a[href^="/shop/"]').first().click();
+    await page.getByRole("button", { name: /add to cart/i }).click();
+    await page.goto("/checkout");
+
+    // No "Sign in to checkout" gate, and no "Verify" button - the email
+    // field just shows the signed-in session's own address, read-only.
+    await expect(page.getByRole("heading", { name: /sign in to checkout/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^verify$/i })).toHaveCount(0);
+
+    const form = page.getByTestId("checkout-form");
+    const emailField = form.getByLabel(/email/i);
+    await expect(emailField).toBeDisabled();
+    await expect(emailField).toHaveValue(/@example\.com$/);
+    await expect(form.getByText(/verified/i)).toBeVisible();
+  });
+
+  test("a visitor who isn't signed in is asked to sign in before checkout, not shown an email-verify step", async ({ page }) => {
+    await page.goto("/shop");
+    await page.locator('a[href^="/shop/"]').first().click();
+    await page.getByRole("button", { name: /add to cart/i }).click();
+    await page.goto("/checkout");
+
+    await expect(page.getByRole("heading", { name: /sign in to checkout/i })).toBeVisible();
+    await expect(page.getByTestId("checkout-form")).toHaveCount(0);
+  });
+
+  test("a signed-in shopper can place an order that goes straight to the Razorpay payment portal", async ({ page }) => {
     await signIn(page, `e2e-checkout-${test.info().workerIndex}-${Date.now()}@example.com`);
 
     await page.goto("/shop");
@@ -100,7 +124,6 @@ test.describe("Signed-in cart/checkout", () => {
 
     const form = page.getByTestId("checkout-form");
     await form.getByLabel(/full name/i).fill("Test User");
-    await form.getByLabel(/email/i).fill(`e2e-checkout-${test.info().workerIndex}-${Date.now()}@example.com`);
     // Not 9876543210 - src/lib/address-validation.ts's isLikelyValidIndianMobile
     // deliberately rejects that exact sequential-descending number as an
     // obviously-fake phone number (found the hard way: this test originally
@@ -110,8 +133,8 @@ test.describe("Signed-in cart/checkout", () => {
     await form.getByLabel(/phone/i).fill("9123456780");
     await form.getByLabel(/address line 1/i).fill("123 Test Street");
     await form.getByLabel(/pin code/i).fill("110001");
-    // City/state are plain editable fields (customer-form.tsx:1226-1355) that
-    // the PIN-code lookup merely pre-fills as a convenience - they're not
+    // City/state are plain editable fields (customer-form.tsx) that the
+    // PIN-code lookup merely pre-fills as a convenience - they're not
     // read-only, so filling them directly here doesn't depend on that lookup
     // actually succeeding. It shouldn't: lookupPincode() (address-validation.ts)
     // calls the real third-party api.postalpincode.in directly from the
@@ -124,15 +147,16 @@ test.describe("Signed-in cart/checkout", () => {
     await form.getByLabel(/city/i).fill("New Delhi");
     await form.getByLabel(/state/i).selectOption("Delhi");
 
-    await verifyCheckoutEmail(page);
-
-    await page.getByRole("button", { name: /upi \(direct\)/i }).click();
+    // UPI is gone - Razorpay is the only (and un-chosen, since there's
+    // nothing left to choose) payment method shown.
+    await expect(page.getByRole("button", { name: /upi/i })).toHaveCount(0);
+    await expect(page.getByText(/cards, upi apps & more \(razorpay\)/i)).toBeVisible();
 
     const orderResponsePromise = page.waitForResponse(
       (response) => response.url().includes("/api/orders") && response.request().method() === "POST",
     );
 
-    await page.getByRole("button", { name: /place order with upi/i }).click();
+    await page.getByRole("button", { name: /continue to payment/i }).click();
 
     const orderResponse = await orderResponsePromise;
     // The real thing this test proves, beyond UI navigation: the server
@@ -141,8 +165,18 @@ test.describe("Signed-in cart/checkout", () => {
     // checkout was rewired to, see DECISIONS.md's 2026-09-21 entry - fail
     // the test loudly instead of the UI silently stalling.
     expect(orderResponse.status(), `order creation failed: ${await orderResponse.text().catch(() => "")}`).toBe(201);
+    const orderBody = (await orderResponse.json().catch(() => null)) as { order?: { paymentMethod?: string } } | null;
+    expect(orderBody?.order?.paymentMethod).toBe("razorpay");
 
+    // Lands on order-success, which should go straight for the payment
+    // portal rather than sitting on a "click Pay Now" screen - it's not
+    // "confirmed" at this point, only "created" (see order-success/page.tsx's
+    // auto-launch effect and backend/orders/service.ts's awaiting_payment
+    // state). Completing the actual Razorpay payment needs a real Razorpay
+    // test-mode interaction, out of scope for this suite - this confirms
+    // the order exists and the payment step is what's shown next, not that
+    // the payment itself succeeds.
     await expect(page).toHaveURL(/\/order-success\?orderId=/, { timeout: 15000 });
-    await expect(page.getByText(/order/i).first()).toBeVisible();
+    await expect(page.getByText(/order id/i).first()).toBeVisible();
   });
 });
