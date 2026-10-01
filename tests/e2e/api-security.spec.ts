@@ -1,5 +1,18 @@
 ﻿import { test, expect } from "@playwright/test";
 
+// Three random octets (~15.6M combinations) rather than Date.now()-derived
+// suffixes - this suite's many other tests, and this file's own fixed-octet
+// headers (10.0.1.x, 10.0.2.x, 10.0.3.x), all generate their own cf-connecting-ip
+// within the same narrow private range at roughly the same wall-clock moment
+// under full parallel load, so anything time-derived collides often enough
+// to matter in practice (confirmed directly: a fresh IP via curl against a
+// live server always behaves correctly, so observed 429s here were genuine
+// bucket collisions with other concurrent traffic, not an app bug).
+function freshTestIp(): string {
+  const octet = () => Math.floor(Math.random() * 255);
+  return `10.${octet()}.${octet()}.${octet()}`;
+}
+
 test.describe("Admin API rejects unauthenticated access", () => {
   test("GET /api/admin/orders returns 401 without a session", async ({ request }) => {
     const response = await request.get("/api/admin/orders");
@@ -35,7 +48,7 @@ test.describe("Authenticated user API enforces ownership (IDOR check)", () => {
 });
 
 test.describe("Auth endpoints validate and rate-limit input", () => {
-  // Each test below sends its own x-forwarded-for so it gets a fresh
+  // Each test below sends its own cf-connecting-ip so it gets a fresh
   // rate-limit bucket. Without this, these malformed-payload checks share
   // the default 127.0.0.1 bucket with the "repeated"/"concurrent" tests
   // further down in this same describe block, which deliberately trip the
@@ -43,9 +56,22 @@ test.describe("Auth endpoints validate and rate-limit input", () => {
   // guaranteed, so a shared bucket makes these fail with 429 instead of
   // 400 whenever a cooldown test runs first. Same fix already applied to
   // the malformed-body-handling tests below.
+  //
+  // cf-connecting-ip specifically, not x-forwarded-for (was
+  // x-forwarded-for until Task 4.3 switched the default webServer to a
+  // real `vinext build` + `wrangler dev` - NODE_ENV=production there, and
+  // getClientIp() (backend/security/rate-limit.ts) deliberately ignores
+  // X-Forwarded-For/X-Real-IP in production - a real, unspoofable-once-
+  // actually-deployed-behind-Cloudflare security property, not a bug.
+  // cf-connecting-ip is the one header getClientIp() trusts unconditionally
+  // in every environment (real Cloudflare sets it from the actual TCP
+  // connection in production, so it's what a genuinely deployed Worker
+  // would use anyway) - trivially spoofable in a local wrangler dev
+  // instance with no real edge in front, which is exactly fine for this
+  // local test's purpose.
   test("send-otp rejects a non-string / malformed email payload", async ({ request }) => {
     const response = await request.post("/api/auth/send-otp", {
-      headers: { "x-forwarded-for": `10.0.4.${Date.now() % 250}` },
+      headers: { "cf-connecting-ip": `10.0.4.${Date.now() % 250}` },
       data: { email: { $ne: null } },
     });
     expect(response.status()).toBe(400);
@@ -53,7 +79,7 @@ test.describe("Auth endpoints validate and rate-limit input", () => {
 
   test("send-otp rejects an invalid email format", async ({ request }) => {
     const response = await request.post("/api/auth/send-otp", {
-      headers: { "x-forwarded-for": `10.0.5.${Date.now() % 250}` },
+      headers: { "cf-connecting-ip": `10.0.5.${Date.now() % 250}` },
       data: { email: "not-an-email" },
     });
     expect(response.status()).toBe(400);
@@ -66,16 +92,34 @@ test.describe("Auth endpoints validate and rate-limit input", () => {
     expect(response.status()).toBe(400);
   });
 
+  // This test is verifying the EMAIL-keyed cooldown inside requestEmailOtp,
+  // not the generic per-IP rate limiter - so it needs its own
+  // cf-connecting-ip, same as every other test in this file, to avoid the
+  // generic limiter's UNKNOWN_CLIENT_IP bucket (strict cap of 3 total) or
+  // any other test's bucket interfering.
+  //
+  // The cooldown response status is 429, not 400 - confirmed by reading
+  // backend/http/auth-response.ts's errorFromUnknown(), which deliberately
+  // maps any "wait a moment" error message to 429 (the correct status for
+  // a cooldown/rate-limit response). This test's own assertion originally
+  // expected 400, which only ever passed by accident: under the old `next
+  // dev` setup (no real Workers runtime, Task 4.3), requestEmailOtp's own
+  // getD1() call threw immediately with an unrelated "not configured"-style
+  // error that happened to land in errorFromUnknown's 400 fallback branch -
+  // never actually exercising the real cooldown path that returns 429. Only
+  // surfaced once this suite started running against a real production
+  // build with real D1-backed auth.
   test("repeated OTP requests for the same email are cooldown-limited", async ({
     request,
   }) => {
     const email = `playwright-test-${Date.now()}@example.com`;
+    const headers = { "cf-connecting-ip": freshTestIp() };
 
-    const first = await request.post("/api/auth/send-otp", { data: { email } });
-    const second = await request.post("/api/auth/send-otp", { data: { email } });
+    const first = await request.post("/api/auth/send-otp", { headers, data: { email } });
+    const second = await request.post("/api/auth/send-otp", { headers, data: { email } });
 
     if (first.ok()) {
-      expect(second.status()).toBe(400);
+      expect(second.status()).toBe(429);
       const body = await second.json();
       expect(body.error ?? "").toMatch(/wait|moment/i);
     }
@@ -95,14 +139,19 @@ test.describe("Auth endpoints validate and rate-limit input", () => {
   // Against local dev (single process, no Upstash) this can pass by
   // accident even with the bug present - it's the production run that
   // actually exercises the cross-instance race this guards against.
+  //
+  // Same cf-connecting-ip reasoning as the test above: a shared header lets
+  // all 5 concurrent requests past the generic per-IP limiter so the
+  // assertion actually exercises the email-cooldown race, not an IP cap.
   test("concurrent send-otp requests for the same email cannot bypass the cooldown", async ({
     request,
   }) => {
     const email = `playwright-concurrent-${Date.now()}@example.com`;
+    const headers = { "cf-connecting-ip": freshTestIp() };
     const concurrency = 5;
 
     const responses = await Promise.all(
-      Array.from({ length: concurrency }, () => request.post("/api/auth/send-otp", { data: { email } })),
+      Array.from({ length: concurrency }, () => request.post("/api/auth/send-otp", { headers, data: { email } })),
     );
 
     const successCount = responses.filter((response) => response.ok()).length;
@@ -118,14 +167,15 @@ test.describe("Auth endpoints validate and rate-limit input", () => {
 // body, syntactically invalid JSON, and a valid body - for both routes.
 for (const path of ["/api/auth/send-otp", "/api/auth/verify-otp"]) {
   test.describe(`${path} malformed-body handling`, () => {
-    // Each test sends its own X-Forwarded-For so it gets a fresh rate-limit
-    // bucket, independent of the other tests in this file that share the
-    // default 127.0.0.1 bucket for this same route.
+    // Each test sends its own CF-Connecting-IP (not X-Forwarded-For - see
+    // the comment above the first describe block that needed this) so it
+    // gets a fresh rate-limit bucket, independent of the other tests in
+    // this file that share the default 127.0.0.1 bucket for this same route.
     test("empty body returns a generic 400", async ({ request }) => {
       const response = await request.post(path, {
         headers: {
           "content-type": "application/json",
-          "x-forwarded-for": `10.0.1.${Date.now() % 250}`,
+          "cf-connecting-ip": `10.0.1.${Date.now() % 250}`,
         },
         data: "",
       });
@@ -139,7 +189,7 @@ for (const path of ["/api/auth/send-otp", "/api/auth/verify-otp"]) {
       const response = await request.post(path, {
         headers: {
           "content-type": "application/json",
-          "x-forwarded-for": `10.0.2.${Date.now() % 250}`,
+          "cf-connecting-ip": `10.0.2.${Date.now() % 250}`,
         },
         data: "{not valid json",
       });
@@ -164,7 +214,7 @@ test.describe("send-otp accepts a well-formed valid body", () => {
   test("a fresh, valid email is not rejected by the malformed-body guard", async ({ request }) => {
     const email = `playwright-valid-${Date.now()}@example.com`;
     const response = await request.post("/api/auth/send-otp", {
-      headers: { "x-forwarded-for": `10.0.3.${Date.now() % 250}` },
+      headers: { "cf-connecting-ip": `10.0.3.${Date.now() % 250}` },
       data: { email },
     });
     if (response.status() === 400) {

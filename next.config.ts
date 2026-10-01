@@ -62,7 +62,15 @@ const CSP = [
   "form-action 'self'",
   `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://checkout.razorpay.com`,
   `style-src 'self' 'unsafe-inline'`,
-  `font-src 'self'`,
+  // data: - the build inlines small font subset files (below Vite's default
+  // asset-inline threshold) as base64 data: URIs directly in the CSS rather
+  // than serving them as separate files - confirmed on the homepage hero's
+  // display font specifically. Same-origin-bundled either way, so no
+  // broader than 'self' already allows; this surfaced once the "/" route
+  // actually started receiving this header (see BACKLOG.md's former
+  // "security headers missing on page routes" note) - CSP had silently
+  // never been enforced there before, so this gap was invisible until now.
+  `font-src 'self' data:`,
   `img-src 'self' data: blob: https:`,
   `connect-src 'self' blob: data: ${S3_CONNECT_SRC} https://api.razorpay.com https://lumberjack.razorpay.com https://staticimgly.com https://api.postalpincode.in`,
   `frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com`,
@@ -96,17 +104,32 @@ const nextConfig: NextConfig = {
       }),
 
   async headers() {
+    const BASE_HEADERS = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+      { key: "Content-Security-Policy", value: CSP },
+    ];
+
     return [
       {
         source: "/:path*",
-        headers: [
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-          { key: "Content-Security-Policy", value: CSP },
-        ],
+        headers: BASE_HEADERS,
+      },
+      {
+        // vinext's matcher for "/:path*" doesn't resolve the zero-segment
+        // case (the bare root) the way Next.js's own path-to-regexp-based
+        // matcher does - confirmed via curl against a real production build
+        // (and the live site) that every other route, including a 404,
+        // correctly got these headers while "/" alone got none. A dedicated
+        // exact-match rule for "/" closes that one gap without touching the
+        // general matcher (see BACKLOG.md's former "security headers missing
+        // on page routes" note, now resolved - it turned out to be this one
+        // route, not a blanket page-route gap).
+        source: "/",
+        headers: BASE_HEADERS,
       },
       {
         // /api/docs (Swagger UI) loads its bundle + stylesheet from unpkg

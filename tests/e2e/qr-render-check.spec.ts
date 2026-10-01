@@ -29,6 +29,19 @@ import { test, expect } from "@playwright/test";
 //   PLAYWRIGHT_BASE_URL=http://localhost:3001 npx playwright test tests/e2e/qr-render-check.spec.ts
 test.describe("QR code rendering via next/image", () => {
   test("a data-URI QR image loads successfully and bypasses the image optimizer", async ({ page }) => {
+    // Task 4.3 made the suite's *default* webServer a real production build
+    // (wrangler dev, NODE_ENV=production) rather than `next dev`/`dev:vinext`
+    // - and /dev/* routes, this test's fixture included, correctly notFound()
+    // there (src/app/dev/layout.tsx's guard - the same one admin-path and
+    // dev-preview rely on). So this test can structurally never pass against
+    // the default suite run; it only ever worked via the explicit manual
+    // invocation its own header comment has always documented. Skip rather
+    // than fail-by-default, since failing here would be reporting a security
+    // guard working correctly as a bug.
+    test.skip(
+      !process.env.PLAYWRIGHT_BASE_URL?.includes(":3001"),
+      "requires dev:vinext on port 3001 - run with PLAYWRIGHT_BASE_URL=http://localhost:3001 npx playwright test tests/e2e/qr-render-check.spec.ts (see header comment)",
+    );
     // Scoped to requests optimizing a data: URI specifically - the page's
     // own navbar/footer logos are legitimately optimized static images and
     // hit /_next/image too; only a request for our data: URI would prove

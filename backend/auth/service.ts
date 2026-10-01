@@ -26,13 +26,28 @@ function assertValidEmail(email: string): string {
 }
 
 async function sendOtpEmail(email: string, code: string): Promise<void> {
+  // AUTH_DEBUG_OTP is an explicit opt-in debug switch - it now wins
+  // outright, checked before RESEND_API_KEY/NODE_ENV at all. Previously
+  // this only activated when no RESEND_API_KEY was configured AND
+  // NODE_ENV !== "production", which meant it was silently unreachable
+  // whenever a real key happened to be set (e.g. for testing real
+  // delivery occasionally) - discovered concretely while wiring up Task
+  // 4.2's signed-in e2e checkout test against Task 4.3's production-build
+  // webServer: a real RESEND_API_KEY is set in .dev.vars, and Resend's
+  // sandbox sender can't actually deliver to the arbitrary per-test email
+  // addresses that flow generates, so the real send just failed outright.
+  // Safe to key on AUTH_DEBUG_OTP alone: the real safety boundary was
+  // never NODE_ENV, it's that AUTH_DEBUG_OTP is explicitly "false" in
+  // wrangler.jsonc's own committed vars - the only thing that reaches the
+  // actually-deployed Worker.
+  if (process.env.AUTH_DEBUG_OTP === "true") {
+    console.info(`[Stick Hive auth] OTP for ${email}: ${code}`);
+    return;
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
 
   if (!apiKey) {
-    if (process.env.AUTH_DEBUG_OTP === "true" && process.env.NODE_ENV !== "production") {
-      console.info(`[Stick Hive auth] OTP for ${email}: ${code}`);
-      return;
-    }
     requireResendApiKey();
   }
 
@@ -103,7 +118,9 @@ export async function requestEmailOtp(emailInput: string): Promise<{ success: tr
     throw error;
   }
 
-  return process.env.AUTH_DEBUG_OTP === "true" && process.env.NODE_ENV !== "production"
+  // Same AUTH_DEBUG_OTP-alone gate as sendOtpEmail above, for the same
+  // reason - see its comment.
+  return process.env.AUTH_DEBUG_OTP === "true"
     ? { success: true, debugCode: code }
     : { success: true };
 }
@@ -148,6 +165,18 @@ export async function verifyEmailOtp(emailInput: string, codeInput: string): Pro
 
   await db.prepare("DELETE FROM otp_challenges WHERE id = ?").bind(challenge.id).run();
 
+  const user = await createOrUpdateVerifiedUser(db, email);
+  await createSessionCookie(db, user.id);
+
+  return { success: true, user: { id: user.id, email: user.email } };
+}
+
+// Shared by verifyEmailOtp above and mintTestSession (dev-only, see
+// below) - both end in the exact same "this email is now a verified,
+// logged-in user" state, just reached via a different verification step
+// (a real OTP vs. an explicit env-gated test seam).
+
+async function createOrUpdateVerifiedUser(db: D1Database, email: string): Promise<UserRow> {
   const verifiedAt = now();
   const userId = crypto.randomUUID();
 
@@ -170,13 +199,16 @@ export async function verifyEmailOtp(emailInput: string, codeInput: string): Pro
   if (!user?.id) {
     throw new Error("Unable to create your account session.");
   }
+  return user;
+}
 
+async function createSessionCookie(db: D1Database, userId: string): Promise<void> {
   const sessionToken = createSessionToken();
   const sessionNow = now();
   const sessionExpiresAt = new Date(sessionNow.getTime() + SESSION_MAX_AGE_SECONDS * 1000);
   await db
     .prepare("INSERT INTO sessions (user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(user.id, hashValue(sessionToken), sessionNow.toISOString(), sessionExpiresAt.toISOString())
+    .bind(userId, hashValue(sessionToken), sessionNow.toISOString(), sessionExpiresAt.toISOString())
     .run();
 
   const cookieStore = await cookies();
@@ -187,6 +219,49 @@ export async function verifyEmailOtp(emailInput: string, codeInput: string): Pro
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
+}
+
+// ============================================================================
+// DEV-ONLY TEST SEAM — mints a real signed session (same user upsert, same
+// sessions-table row, same httpOnly cookie as verifyEmailOtp above) without
+// the OTP round-trip, so e2e tests can drive a genuinely signed-in flow
+// (cart, checkout, orders) without reimplementing this module's crypto or
+// depending on a real inbox.
+//
+// Deliberately gated on AUTH_TEST_SESSION_SEAM=true ALONE, not also
+// NODE_ENV !== "production" (unlike AUTH_DEBUG_OTP/the /dev/* pages) - a
+// real, load-bearing difference discovered while wiring up Task 4.3's
+// webServer, not an oversight. `vinext build` + `wrangler dev --config
+// dist/server/wrangler.json` (the real production artifact, run locally
+// for e2e testing) genuinely sets NODE_ENV=production - confirmed
+// directly (the /dev/* pages correctly 404 there). A NODE_ENV check would
+// make this seam permanently unusable in exactly the environment it
+// exists for. The real safety boundary is that AUTH_TEST_SESSION_SEAM is
+// never in wrangler.jsonc's committed `vars` (the only thing that reaches
+// the actually-deployed Worker) and only ever set via the gitignored,
+// local-only .dev.vars - its ABSENCE, not NODE_ENV, is what keeps this
+// off the real live site. Still mints a fully valid session for an
+// arbitrary email with zero verification, so the explicit opt-in still
+// matters - just not paired with a check that would defeat its purpose.
+// ============================================================================
+
+export function isTestSessionSeamAllowed(): boolean {
+  return process.env.AUTH_TEST_SESSION_SEAM === "true";
+}
+
+export async function mintTestSession(emailInput: string): Promise<{
+  success: true;
+  user: { id: string; email: string };
+}> {
+  if (!isTestSessionSeamAllowed()) {
+    throw new Error("Test session seam is not enabled.");
+  }
+
+  const email = assertValidEmail(emailInput);
+  const db = getD1();
+
+  const user = await createOrUpdateVerifiedUser(db, email);
+  await createSessionCookie(db, user.id);
 
   return { success: true, user: { id: user.id, email: user.email } };
 }
