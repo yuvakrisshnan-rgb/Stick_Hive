@@ -35,10 +35,8 @@ import {
   clearStoredCustomCart,
   loadCart,
   loadCustomCart,
-  loadWishlist,
   saveCart,
   saveCustomCart,
-  saveWishlist,
 } from "@/lib/cart/storage";
 
 import type {
@@ -166,17 +164,11 @@ type ShopContextValue = {
   openCart: () => void;
   closeCart: () => void;
 
-  // Wishlist
-  wishlist: string[];
-  wishlistCount: number;
-
-  isWishlisted: (
-    productId: string,
-  ) => boolean;
-
-  toggleWishlist: (
-    productId: string,
-  ) => void;
+  // The real dynamic catalog (static-array-seeded, then /api/products-
+  // loaded) - for any client component that needs the live product list
+  // without importing the static PRODUCTS array directly (e.g. the navbar
+  // search, which must search the real catalog, not the static demo one).
+  catalog: Product[];
 
   // Resolves a product id against the same dynamic (static-array-seeded,
   // then /api/products-loaded) catalog the cart itself uses - for any
@@ -393,22 +385,6 @@ function sanitizeCustomCart(
 }
 
 
-function sanitizeWishlist(
-  value: unknown,
-  productById: Map<string, Product>,
-): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return [
-    ...new Set(
-      value.filter((id): id is string => isValidProduct(id, productById)),
-    ),
-  ];
-}
-
-
 function createCustomStickerId(): string {
   if (
     typeof crypto !== "undefined" &&
@@ -441,9 +417,6 @@ export function ShopProvider({
 
   const [customCartLines, setCustomCartLines] =
     useState<CustomStickerCartLine[]>([]);
-
-  const [wishlist, setWishlist] =
-    useState<string[]>([]);
 
   const [isCartOpen, setIsCartOpen] =
     useState(false);
@@ -561,19 +534,11 @@ export function ShopProvider({
         loadCustomCart(),
       );
 
-    const savedWishlist =
-      sanitizeWishlist(
-        loadWishlist(),
-        productById,
-      );
-
     setCart(savedCart);
     setCustomCartLines(savedCustomCart);
-    setWishlist(savedWishlist);
 
     saveCart(savedCart);
     saveCustomCart(savedCustomCart);
-    saveWishlist(savedWishlist);
 
     setHydrated(true);
   }, [catalogReady, productById]);
@@ -602,15 +567,6 @@ export function ShopProvider({
     customCartLines,
     hydrated,
   ]);
-
-
-  useEffect(() => {
-    if (!hydrated) {
-      return;
-    }
-
-    saveWishlist(wishlist);
-  }, [wishlist, hydrated]);
 
 
   // ==========================================================================
@@ -999,51 +955,6 @@ export function ShopProvider({
     }, []);
 
 
-  // ==========================================================================
-  // WISHLIST
-  // ==========================================================================
-
-  const toggleWishlist =
-    useCallback(
-      (productId: string) => {
-        if (
-          !isValidProduct(productId, productById)
-        ) {
-          return;
-        }
-
-        setWishlist((current) => {
-          if (
-            current.includes(
-              productId,
-            )
-          ) {
-            return current.filter(
-              (id) =>
-                id !== productId,
-            );
-          }
-
-          return [
-            ...current,
-            productId,
-          ];
-        });
-      },
-      [productById],
-    );
-
-
-  const isWishlisted =
-    useCallback(
-      (productId: string) =>
-        wishlist.includes(
-          productId,
-        ),
-      [wishlist],
-    );
-
-
   const getProduct =
     useCallback(
       (productId: string) =>
@@ -1232,10 +1143,6 @@ export function ShopProvider({
     );
 
 
-  const wishlistCount =
-    wishlist.length;
-
-
   // ==========================================================================
   // CONTEXT VALUE
   // ==========================================================================
@@ -1295,13 +1202,7 @@ export function ShopProvider({
 
         closeCart,
 
-        wishlist,
-
-        wishlistCount,
-
-        isWishlisted,
-
-        toggleWishlist,
+        catalog,
 
         getProduct,
       }),
@@ -1332,10 +1233,7 @@ export function ShopProvider({
         isCartOpen,
         openCart,
         closeCart,
-        wishlist,
-        wishlistCount,
-        isWishlisted,
-        toggleWishlist,
+        catalog,
         getProduct,
       ],
     );

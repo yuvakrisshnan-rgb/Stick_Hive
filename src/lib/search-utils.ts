@@ -1,5 +1,4 @@
 import {
-  PRODUCTS,
   type Product,
 } from "@/lib/product-data";
 
@@ -23,9 +22,15 @@ export function normalizeSearch(
 // ==========================================
 // SEARCH PRODUCTS
 // ==========================================
+// Takes the product list as a parameter instead of importing the static
+// PRODUCTS array directly - callers (the navbar's quick search) need to
+// search whatever catalog is actually live (the real D1 catalog once
+// PRODUCTS_SOURCE=d1, not the 30-item static demo array), which only a
+// client component holding that state can supply.
 
 export function searchProducts(
-  query:string
+  query:string,
+  products: Product[],
 ): Product[] {
 
 
@@ -39,13 +44,13 @@ export function searchProducts(
 
   if(!search){
 
-    return PRODUCTS;
+    return products;
 
   }
 
 
 
-  return PRODUCTS.filter(
+  return products.filter(
     (product)=>{
 
 
@@ -107,7 +112,8 @@ export const POPULAR_SEARCHES = [
 // ==========================================
 
 export function getSuggestions(
-  query:string
+  query:string,
+  products: Product[],
 ){
 
 
@@ -119,7 +125,7 @@ export function getSuggestions(
 
 
 
-  return searchProducts(query)
+  return searchProducts(query, products)
 
     .slice(0,5)
 

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, Home } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { PRODUCTS } from "@/lib/product-data";
+import { useShop } from "@/components/shop/store-provider";
 import BuzzingBees from "../../components/about/buzzing-bees";
 
 /**
@@ -198,6 +198,8 @@ const values = [
 ];
 
 export default function AboutPage() {
+  const { catalog } = useShop();
+
   return (
     <main className="w-full max-w-full overflow-x-hidden bg-cream text-foreground">
       <section className="relative min-h-[88vh] overflow-hidden px-6 pb-24 pt-36 md:px-10 md:pt-44 lg:px-14">
@@ -460,7 +462,7 @@ export default function AboutPage() {
         </Reveal>
       </section>
 
-      <div className="sr-only">StickHive currently has {PRODUCTS.length} catalogue entries.</div>
+      <div className="sr-only">StickHive currently has {catalog.length} catalogue entries.</div>
     </main>
   );
 }

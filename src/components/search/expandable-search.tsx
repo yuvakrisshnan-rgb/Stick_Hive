@@ -25,12 +25,18 @@ import {
   getSuggestions,
 } from "@/lib/search-utils";
 
+import {
+  useShop,
+} from "@/components/shop/store-provider";
+
 
 
 export default function ExpandableSearch() {
 
 
   const router = useRouter();
+
+  const { catalog } = useShop();
 
 
 
@@ -67,11 +73,11 @@ export default function ExpandableSearch() {
   // --------------------------------------------------
 
   const results =
-    searchProducts(query);
+    searchProducts(query, catalog);
 
 
   const suggestions =
-    getSuggestions(query);
+    getSuggestions(query, catalog);
 
 
 

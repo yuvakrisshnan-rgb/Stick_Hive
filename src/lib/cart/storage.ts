@@ -5,7 +5,6 @@ import type {
 
 const CART_KEY = "stickhive:cart";
 const CUSTOM_CART_KEY = "stickhive:custom-cart";
-const WISHLIST_KEY = "stickhive:wishlist";
 
 function readStorage<T>(
   key: string,
@@ -102,27 +101,5 @@ export function saveCustomCart(
 export function clearStoredCustomCart(): void {
   removeStorage(
     CUSTOM_CART_KEY,
-  );
-}
-
-export function loadWishlist(): string[] {
-  return readStorage<string[]>(
-    WISHLIST_KEY,
-    [],
-  );
-}
-
-export function saveWishlist(
-  wishlist: string[],
-): void {
-  writeStorage(
-    WISHLIST_KEY,
-    wishlist,
-  );
-}
-
-export function clearStoredWishlist(): void {
-  removeStorage(
-    WISHLIST_KEY,
   );
 }

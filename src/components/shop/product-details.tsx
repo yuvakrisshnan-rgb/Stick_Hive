@@ -19,6 +19,8 @@ import { StickerImage } from "@/components/shop/sticker-image";
 
 import { useShop } from "@/components/shop/store-provider";
 
+import { useWishlist } from "@/components/wishlist/wishlist-provider";
+
 import RelatedProducts from "@/components/shop/related-products";
 
 
@@ -37,9 +39,12 @@ export default function ProductDetails({
   const {
     addToCart,
     openCart,
+  } = useShop();
+
+  const {
     isWishlisted,
     toggleWishlist,
-  } = useShop();
+  } = useWishlist();
 
 
   // ==========================================

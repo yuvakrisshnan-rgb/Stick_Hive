@@ -14,7 +14,9 @@ D1 migrations are deliberately **not** run by the workflow - `wrangler d1 migrat
 
 ## What's live in production right now
 
-**D1 + R2 have been live since 2026-09-21** - `PRODUCTS_SOURCE=d1` is set in `wrangler.jsonc`'s committed `vars` block (not a flag waiting to be flipped), and every active product has a real `image_url`/`thumbnail_url` pointing at the `stickhive-product-images` R2 bucket's public `pub-*.r2.dev` domain. `/shop`, `/shop/[id]`, checkout, and the homepage all read the real D1 catalogue - the static `PRODUCTS` array (`src/lib/product-data.ts`) is now only a fallback for a D1 read failure at runtime, not the default path.
+**D1 + R2 have been live since 2026-09-21** - `PRODUCTS_SOURCE=d1` is set in `wrangler.jsonc`'s committed `vars` block (not a flag waiting to be flipped), and every active product has a real `image_url`/`thumbnail_url` pointing at the `stickhive-product-images` R2 bucket's public `pub-*.r2.dev` domain. `/shop`, `/shop/[id]`, checkout, the homepage, and - as of 2026-09-30 - the navbar's quick search and `about/page.tsx`'s catalogue-size stat all read the real D1 catalogue. The static `PRODUCTS` array (`src/lib/product-data.ts`) stays as the deliberate fallback for a D1 read failure at runtime (`backend/products/catalog.ts`, `store-provider.tsx`'s first-paint seed) - see DECISIONS.md - but every other live read of it has been removed.
+
+**Wishlist**: one real implementation (`src/components/wishlist/wishlist-provider.tsx`'s `useWishlist()`, server-synced via `/api/wishlist`) - `store-provider.tsx`'s separate, parallel, localStorage-only wishlist was deleted 2026-09-30 after confirming (and fixing) its one real consumer (`product-details.tsx`, since rewired to `useWishlist()` too). See DECISIONS.md.
 
 **Catalogue size** (remote D1, checked directly): **298 products** - 211 `status='active'` (live, purchasable, all with real R2 images), 87 `status='draft', needs_review=1` (pending review, no images uploaded yet - see BACKLOG.md's review-queue note). Schema: `migrations/0001` through `0006`, no migration added since `0006_products.sql`.
 
@@ -33,7 +35,6 @@ D1 migrations are deliberately **not** run by the workflow - `wrangler d1 migrat
 - **Review queue has no image-serving path** - the 87 `needs_review=1` rows have no `image_url` (R2 upload only runs for `status='active'` rows). A review-queue admin UI needs this solved first - see BACKLOG.md.
 - **Cloudflare Web Analytics is not enabled** - no traffic/visitor data exists anywhere in the app. A prerequisite for any future "Traffic" admin section, not yet turned on.
 - **AI shopping assistant** - not started. Full scope in BACKLOG.md.
-- **`src/lib/product-data.ts`'s static `PRODUCTS` array and `src/components/shop/store-provider.tsx`'s dead second wishlist implementation** - both still present, both flagged for a deliberate delete-or-keep decision in BACKLOG.md, neither touched without that decision being made first.
 - **No real signed-in e2e coverage** for cart/checkout - `cart-checkout.spec.ts` only covers the guest experience. BACKLOG.md has the two options (a dev-only session-minting test seam, or driving the real OTP flow against a test inbox).
 
 ## Where to look for more detail
