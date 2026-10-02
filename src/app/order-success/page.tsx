@@ -274,11 +274,14 @@ function OrderSuccessContent() {
     setQrDataUrl,
   ] = useState("");
 
-  const [
-    isClaimingPayment,
-    setIsClaimingPayment,
-  ] = useState(false);
-
+  // Used by handleRetryPayment's "Pay Again" flow (an expired payment
+  // window restarting a fresh one) - the "I've Paid" self-report button
+  // that used to also write to this was removed 2026-10-02 (see
+  // DECISIONS.md): UPI orders paid via Google Pay now confirm themselves
+  // automatically (checkGooglePayPayment -> confirmUpiPaymentViaGooglePay),
+  // and any other UPI app still has no customer-facing claim step at all,
+  // by deliberate choice - only the manual admin-verification path remains
+  // for those.
   const [
     paymentMessage,
     setPaymentMessage,
@@ -608,33 +611,6 @@ function OrderSuccessContent() {
   }
 
   // ==========================================================================
-  // CLAIM UPI PAYMENT
-  // ==========================================================================
-
-  async function handleClaimUpiPayment() {
-    setPaymentMessage("");
-    setIsClaimingPayment(true);
-
-    try {
-      const response = await fetch(
-        `/api/orders/${encodeURIComponent(currentOrder.orderId)}/payment-claim`,
-        { method: "POST" },
-      );
-      const data = (await response.json()) as any;
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error ?? "Unable to record your payment confirmation.");
-      }
-
-      setOrder(data.order as StoredOrder);
-      setPaymentMessage("Payment submitted. We'll confirm your order after we verify the payment.");
-    } catch (error) {
-      setPaymentMessage(error instanceof Error ? error.message : "Unable to record your payment confirmation.");
-    } finally {
-      setIsClaimingPayment(false);
-    }
-  }
-
-  // ==========================================================================
   // RAZORPAY
   // ==========================================================================
   //
@@ -898,7 +874,7 @@ function OrderSuccessContent() {
                 ? "Thank you for shopping with Stick Hive. Your stickers are now being prepared."
                 : currentOrder.paymentStatus === "cancelled"
                   ? "This order's payment window has closed. Start a new one below to pay and keep your order."
-                  : "Your order is saved - it's only confirmed once we verify your payment below. Pay using the QR code or any UPI app."}
+                  : "Your order is saved - pay using the QR code or any UPI app below. Google Pay confirms automatically; other UPI apps are confirmed once we reconcile our bank statement."}
           </p>
 
 
@@ -1036,23 +1012,12 @@ function OrderSuccessContent() {
                 </div>
               </div>
 
-              
-              <button
-                type="button"
-                onClick={handleClaimUpiPayment}
-                disabled={isClaimingPayment || currentOrder.paymentStatus === "pending_confirmation"}
-                className="mt-5 w-full rounded-full bg-black px-6 py-4 font-bold text-white transition hover:scale-[1.01] hover:bg-honey-orange disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 disabled:hover:bg-black"
-              >
-                {isClaimingPayment
-                  ? "Checking payment…"
-                  : currentOrder.paymentStatus === "pending_confirmation"
-                    ? "Payment verification in progress"
-                    : "I've Paid — Check Payment"}
-              </button>
-
-              {paymentMessage && (
-                <p className="mt-3 text-sm font-semibold text-black/60">{paymentMessage}</p>
-              )}
+              <p className="mx-auto mt-5 max-w-md text-xs leading-relaxed text-black/40">
+                Paid with Google Pay? This page checks automatically and
+                updates on its own, usually within moments. Paid with
+                another UPI app? We confirm it from our bank statement -
+                no need to do anything else.
+              </p>
             </div>
           </section>
         )}

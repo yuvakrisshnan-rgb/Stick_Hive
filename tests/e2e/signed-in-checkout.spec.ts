@@ -179,10 +179,15 @@ test.describe("Signed-in cart/checkout", () => {
     // Lands on order-success, which shows the UPI QR/deep-link payment
     // screen immediately rather than an "order received" message - it's
     // not "confirmed" at this point, only "created" (see
-    // backend/orders/service.ts's awaiting_payment state). The order is
-    // only confirmed once an admin verifies the payment, so this test
-    // just confirms the order exists and the payment screen is what's
-    // shown next, not that a real payment completes.
+    // backend/orders/service.ts's awaiting_payment state). A Google Pay
+    // payment now confirms itself automatically (checkGooglePayPayment ->
+    // confirmUpiPaymentViaGooglePay, 2026-10-02 - see DECISIONS.md); any
+    // other UPI app still needs the existing manual admin-verification
+    // path, with no customer-facing claim step at all anymore. This test
+    // doesn't drive a real payment (needs real Google Pay test credentials,
+    // out of scope here) - it just confirms the order exists, the payment
+    // screen is what's shown next, and the self-report button that used
+    // to live here is genuinely gone, not that a real payment completes.
     await expect(page).toHaveURL(/\/order-success\?orderId=/, { timeout: 15000 });
 
     const lastOrder = await page.evaluate(() =>
@@ -192,5 +197,6 @@ test.describe("Signed-in cart/checkout", () => {
 
     await expect(page.getByText(/order id/i).first()).toBeVisible();
     await expect(page.getByText(/pay .* via upi/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /i.ve paid/i })).toHaveCount(0);
   });
 });

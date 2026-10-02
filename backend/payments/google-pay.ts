@@ -1,7 +1,7 @@
 import { GoogleAuth } from "google-auth-library";
-import { getD1 } from "../db/d1";
 import { getCurrentUser } from "../auth/service";
-import { getMyOrder } from "../orders/service";
+import { confirmUpiPaymentViaGooglePay, getMyOrder } from "../orders/service";
+import { sendOrderConfirmationEmail } from "../shipping/notifications";
 
 type GoogleTransactionResponse = {
   transactionStatus?: "SUCCESS" | "FAILURE" | "IN_PROGRESS" | "PAYMENT_NOT_INITIATED";
@@ -85,26 +85,45 @@ export async function checkGooglePayPayment(orderId: string) {
   const paid = data.transactionStatus === "SUCCESS" && amount !== null && Math.abs(amount - expected) < 0.01;
 
   if (paid) {
-    // IMPORTANT: this is an automated, unattended check (polled from the
-    // customer's browser every few seconds) — it must never itself mark an
-    // order "paid". It only records a suggestion for an admin to review and
-    // confirm via the existing manual submitPaymentVerification flow. Only
-    // that explicit admin action may set paymentStatus to "paid".
-    const now = new Date();
-    const autoVerification = {
+    // Deliberate, explicit override of this function's original, more
+    // conservative design (confirmed with the project owner - see
+    // DECISIONS.md): Google's own merchant-transaction API is now trusted
+    // to confirm payment directly, the same way the Razorpay webhook's
+    // signed callback does, instead of only writing a suggestion for an
+    // admin to review. Scoped to Google Pay specifically - any other UPI
+    // app a customer might have paid with still has no automated
+    // confirmation path and needs the existing manual admin-verification
+    // flow (updateAdminOrder), unchanged.
+    const result = await confirmUpiPaymentViaGooglePay({
+      orderId,
       transactionId: data.googleTransactionId || order.upiPayment.transactionReference,
       utr: data.upiTransactionReferenceNumber,
       paidAmount: amount as number,
-      paidAt: now,
-      detectedAt: now,
-      source: "google-pay-api",
-    };
-    const db = getD1();
-    await db
-      .prepare("UPDATE orders SET payment_auto_verification = ?, updated_at = ? WHERE order_id = ? AND payment_status != 'paid'")
-      .bind(JSON.stringify(autoVerification), now.toISOString(), orderId)
-      .run();
-    return { status: data.transactionStatus, paid: false, autoVerified: true, order: await getMyOrder(orderId) };
+    });
+
+    // Only send the confirmation email the first time this order actually
+    // transitions to paid - a repeat poll hitting the same already-paid
+    // order (the idempotency guard inside confirmUpiPaymentViaGooglePay)
+    // must not re-send it. Mirrors the Razorpay webhook route's identical
+    // alreadyProcessed check.
+    if (result.matched && !result.alreadyProcessed && result.order) {
+      const paidOrder = result.order;
+      try {
+        await sendOrderConfirmationEmail({
+          to: paidOrder.customer.email,
+          customerName: paidOrder.customer.name,
+          orderId: paidOrder.orderId,
+          items: paidOrder.items.map((item) => ({ name: item.productName, quantity: item.quantity, lineTotal: item.lineTotal })),
+          subtotal: paidOrder.subtotal,
+          shipping: paidOrder.shipping,
+          total: paidOrder.total,
+        });
+      } catch (emailError) {
+        console.error("Failed to send order confirmation email after an automated Google Pay confirmation:", emailError);
+      }
+    }
+
+    return { status: data.transactionStatus, paid: true, order: await getMyOrder(orderId) };
   }
 
   return { status: data.transactionStatus ?? "IN_PROGRESS", paid: false, amount, order };

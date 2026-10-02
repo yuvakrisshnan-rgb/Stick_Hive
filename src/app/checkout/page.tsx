@@ -1089,7 +1089,7 @@ export default function CheckoutPage() {
                   <div>
                     <p className="font-bold">UPI</p>
                     <p className="mt-1 text-xs leading-relaxed opacity-70">
-                      You&apos;ll get a QR code and UPI link next - pay with any UPI app. We confirm your order as soon as we verify the payment.
+                      You&apos;ll get a QR code and UPI link next. Google Pay confirms automatically; other UPI apps are confirmed once we reconcile our bank statement.
                     </p>
                   </div>
                 </div>

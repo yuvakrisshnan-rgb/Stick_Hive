@@ -791,6 +791,67 @@ export async function setRazorpayPaymentState(params: {
   return { matched: true as const, alreadyProcessed: false as const, order: updated ?? existing };
 }
 
+/**
+ * Called ONLY from checkGooglePayPayment (backend/payments/google-pay.ts)
+ * once Google's own merchant-transaction API has confirmed a matching
+ * SUCCESS result for this order's QR/deep-link transaction reference - the
+ * sole automated path allowed to mark a direct-UPI order "paid" without an
+ * explicit admin action, mirroring setRazorpayPaymentState above. This is a
+ * deliberate, explicit override of this project's original, more
+ * conservative design (see that file's prior comment history and
+ * DECISIONS.md) - a project-owner decision, not a default. Scoped
+ * narrowly: this only ever runs for a Google Pay-confirmed transaction: any
+ * other UPI app a customer might have actually paid with still has no
+ * automated confirmation signal at all and needs the existing manual
+ * updateAdminOrder path, unchanged. Idempotent: the `payment_status !=
+ * 'paid'` filter means a second poll after this already landed is a
+ * silent no-op, not a double-write.
+ */
+export async function confirmUpiPaymentViaGooglePay(params: {
+  orderId: string;
+  transactionId: string;
+  utr?: string;
+  paidAmount: number;
+}) {
+  const db = getD1();
+  const existing = await loadOrderByOrderId(db, params.orderId);
+  if (!existing) return { matched: false as const };
+  if (existing.paymentStatus === "paid") return { matched: true as const, alreadyProcessed: true as const, order: existing };
+
+  const now = new Date();
+  const verification: NonNullable<OrderDocument["paymentVerification"]> = {
+    transactionId: params.transactionId,
+    ...(params.utr ? { utr: params.utr } : {}),
+    paidAmount: Number(params.paidAmount.toFixed(2)),
+    paidAt: now,
+    verifiedAt: now,
+    // A sentinel, not an admin email - every other paymentVerification
+    // record has a real admin's address here (see normalizePaymentVerification
+    // below), so this is immediately, visibly distinguishable in the admin
+    // dashboard (admin-client.tsx renders "Verified by {verifiedBy}" as-is)
+    // as an automated confirmation rather than a human-reviewed one.
+    verifiedBy: "google_pay_auto",
+    note: "Confirmed automatically via Google Pay's merchant transaction-status API - no admin action taken.",
+  };
+
+  const result = await db
+    .prepare(
+      `UPDATE orders SET payment_status = 'paid', status = ?, payment_verification = ?, payment_auto_verification = NULL, updated_at = ?
+       WHERE order_id = ? AND payment_status != 'paid'`,
+    )
+    .bind(
+      existing.status === "awaiting_payment" ? "placed" : existing.status,
+      JSON.stringify(verification),
+      now.toISOString(),
+      params.orderId,
+    )
+    .run();
+  if (!result.meta.changes) return { matched: true as const, alreadyProcessed: true as const, order: existing };
+
+  const updated = await loadOrderByOrderId(db, params.orderId);
+  return { matched: true as const, alreadyProcessed: false as const, order: updated ?? existing };
+}
+
 export type FulfillmentStatus = Exclude<OrderDocument["status"], "awaiting_payment">;
 
 export type ShippingDetailsInput = {
