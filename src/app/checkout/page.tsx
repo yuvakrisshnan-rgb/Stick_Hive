@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -33,10 +32,6 @@ import { useShop } from "@/components/shop/store-provider";
 import {
   saveAddress,
 } from "@/lib/address-storage";
-
-import {
-  getRazorpayPlatformFee,
-} from "@/lib/cart/calculations";
 
 
 
@@ -123,33 +118,14 @@ export default function CheckoutPage() {
   // ==========================================================================
   // PAYMENT METHOD
   // ==========================================================================
-  // Razorpay is now the only checkout path - it already offers UPI apps,
-  // cards and netbanking inside its own checkout, confirmed automatically
-  // via a signed webhook. The old hand-rolled UPI flow (QR code, "I've
-  // paid", manual admin verification) is no longer offered to new orders.
+  // Direct UPI (QR code + deep link, paid straight to the store's own VPA)
+  // is the only checkout path - no payment gateway in between. There's no
+  // enablement flag for this the way Razorpay has isRazorpayConfigured():
+  // it's unconditionally offered, and the only failure mode is the backend
+  // not having STICKHIVE_UPI_ID set, which surfaces as an order-creation
+  // error rather than something checked up front here.
 
-  const paymentMethod = "razorpay" as const;
-
-  const [
-    razorpayEnabled,
-    setRazorpayEnabled,
-  ] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void fetch("/api/payments/razorpay/status")
-      .then((response) => response.json() as any)
-      .then((data) => {
-        if (!active) return;
-        setRazorpayEnabled(Boolean(data?.enabled));
-      })
-      .catch(() => {
-        if (active) setRazorpayEnabled(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const paymentMethod = "upi" as const;
 
 
   // ==========================================================================
@@ -171,13 +147,9 @@ export default function CheckoutPage() {
   // ==========================================================================
   // FEE / TOTALS
   // ==========================================================================
+  // Direct UPI carries no platform fee - that's a Razorpay-only charge.
 
-  const platformFee =
-    paymentMethod === "razorpay"
-      ? getRazorpayPlatformFee(cartTotal)
-      : 0;
-
-  const grandTotal = cartTotal + platformFee;
+  const grandTotal = cartTotal;
 
 
   // ==========================================================================
@@ -555,11 +527,6 @@ export default function CheckoutPage() {
     setErrors(validationErrors);
 
     if (validationErrors.name || validationErrors.email || validationErrors.phone || validationErrors.address) {
-      return;
-    }
-
-    if (razorpayEnabled === false) {
-      setOrderError("Payments are temporarily unavailable. Please check back shortly.");
       return;
     }
 
@@ -1072,37 +1039,6 @@ export default function CheckoutPage() {
               </div>
 
 
-              {platformFee > 0 && (
-                <div
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                    text-sm
-                  "
-                >
-
-                  <span
-                    className="
-                      text-black/60
-                    "
-                  >
-                    Platform fee (2.36%)
-                  </span>
-
-
-                  <span
-                    className="
-                      font-semibold
-                    "
-                  >
-                    ₹{platformFee.toFixed(2)}
-                  </span>
-
-                </div>
-              )}
-
-
               <div
                 className="
                   flex
@@ -1145,28 +1081,19 @@ export default function CheckoutPage() {
                 Payment Method
               </p>
 
-              {razorpayEnabled === false ? (
-                <div className="w-full rounded-2xl border border-red-200 bg-red-50 p-4 text-left">
-                  <p className="font-bold text-red-600">Payments are temporarily unavailable</p>
-                  <p className="mt-1 text-xs leading-relaxed text-red-500">
-                    Please check back shortly - we&apos;re not able to take payments right now.
-                  </p>
-                </div>
-              ) : (
-                <div className="w-full rounded-2xl border border-black bg-black p-4 text-left text-white">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black">
-                      ₹
-                    </div>
-                    <div>
-                      <p className="font-bold">Cards, UPI apps &amp; more (Razorpay)</p>
-                      <p className="mt-1 text-xs leading-relaxed opacity-70">
-                        You&apos;ll be taken straight to the secure payment portal next - confirmation is instant, no manual verification. Includes a 2.36% platform fee.
-                      </p>
-                    </div>
+              <div className="w-full rounded-2xl border border-black bg-black p-4 text-left text-white">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-black">
+                    ₹
+                  </div>
+                  <div>
+                    <p className="font-bold">UPI</p>
+                    <p className="mt-1 text-xs leading-relaxed opacity-70">
+                      You&apos;ll get a QR code and UPI link next - pay with any UPI app. We confirm your order as soon as we verify the payment.
+                    </p>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
 
             {orderError && (
@@ -1201,8 +1128,7 @@ export default function CheckoutPage() {
                 handlePlaceOrder
               }
               disabled={
-                isPlacingOrder ||
-                razorpayEnabled === false
+                isPlacingOrder
               }
               aria-busy={
                 isPlacingOrder
@@ -1254,12 +1180,6 @@ export default function CheckoutPage() {
                   </span>
 
                 </>
-
-              ) : razorpayEnabled === false ? (
-
-                <span>
-                  Payments Unavailable
-                </span>
 
               ) : (
 

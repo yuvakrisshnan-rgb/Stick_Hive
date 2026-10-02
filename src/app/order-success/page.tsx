@@ -3,7 +3,6 @@
 import {
   Suspense,
   useEffect,
-  useRef,
   useState,
 } from "react";
 
@@ -293,13 +292,6 @@ function OrderSuccessContent() {
   const [isConfirmingRazorpay, setIsConfirmingRazorpay] = useState(false);
   const [razorpayError, setRazorpayError] = useState("");
 
-  // Place Order now lands here and should go straight into the payment
-  // portal, not sit on a "click Pay Now" screen - this ref makes sure that
-  // only happens once per order (not on every poll/refetch), and doesn't
-  // re-fire just because the customer dismissed the modal and the button
-  // is still available for a manual retry.
-  const autoLaunchedRazorpayRef = useRef(false);
-
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [invoiceError, setInvoiceError] = useState("");
 
@@ -410,31 +402,6 @@ function OrderSuccessContent() {
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
   }, [order?.paymentExpiresAt, order?.paymentStatus]);
-
-  // ==========================================================================
-  // AUTO-LAUNCH RAZORPAY
-  // ==========================================================================
-  // Checkout's "Continue to Payment" button should lead straight into the
-  // payment portal, not onto a page that waits for a second "Pay Now"
-  // click. Open the Razorpay checkout the moment the order and the
-  // checkout.js script are both ready - handlePayWithRazorpay/the webhook
-  // still own the actual paid/not-paid decision, this just removes the
-  // extra manual step for a fresh, unpaid order.
-  useEffect(() => {
-    if (autoLaunchedRazorpayRef.current) return;
-    if (!order) return;
-    if (order.paymentMethod !== "razorpay") return;
-    if (order.paymentStatus === "paid" || order.paymentStatus === "cancelled") return;
-    if (!isRazorpayScriptReady) return;
-    autoLaunchedRazorpayRef.current = true;
-    void handlePayWithRazorpay();
-    // handlePayWithRazorpay intentionally omitted - it's a plain function
-    // declaration (not useCallback-wrapped, and can't easily become one:
-    // it reads currentOrder, which only exists after this component's
-    // early loading/not-found returns, so it can't be a Hook itself
-    // without moving ahead of those). The ref guard above is what actually
-    // keeps this effect idempotent, not the dependency array.
-  }, [order, isRazorpayScriptReady]);
 
   // ==========================================================================
   // LOADING STATE
@@ -909,9 +876,11 @@ function OrderSuccessContent() {
           >
             {currentOrder.paymentStatus === "paid"
               ? "Order Confirmed!"
-              : currentOrder.paymentMethod === "razorpay"
-                ? "Complete Your Payment"
-                : "Order Received"}
+              : currentOrder.paymentStatus === "pending_confirmation"
+                ? "Payment Submitted"
+                : currentOrder.paymentStatus === "cancelled"
+                  ? "Payment Window Expired"
+                  : "Complete Your Payment"}
           </h1>
 
 
@@ -927,9 +896,9 @@ function OrderSuccessContent() {
               ? "Your payment is awaiting verification. We&apos;ll update the order once it is confirmed."
               : currentOrder.paymentStatus === "paid"
                 ? "Thank you for shopping with Stick Hive. Your stickers are now being prepared."
-                : currentOrder.paymentMethod === "razorpay"
-                  ? "Your order is saved - it's only confirmed once payment goes through. The secure payment window should open automatically."
-                  : "Your order is created. Complete the UPI payment below to finish checkout."}
+                : currentOrder.paymentStatus === "cancelled"
+                  ? "This order's payment window has closed. Start a new one below to pay and keep your order."
+                  : "Your order is saved - it's only confirmed once we verify your payment below. Pay using the QR code or any UPI app."}
           </p>
 
 

@@ -22,18 +22,16 @@ import { test, expect, type Page } from "@playwright/test";
 // this is reachable through the normal `npm run test:e2e` command, not
 // just via a manually-started `dev:vinext`.
 //
-// Checkout no longer runs its own email-verification step, and UPI is no
-// longer offered - both changed 2026-10-02 (see DECISIONS.md). Checkout's
-// "Verify Email" step turned out to just be the sign-in OTP under a
-// different URL, so it's gone: a shopper now has to already be signed in
-// (mint-session here, the real navbar OTP flow for a human) before
-// checkout/page.tsx will even render the form, and the email field is
-// then a read-only display of the session's own address. Razorpay is the
-// only payment method now (it already supports UPI apps inside its own
-// checkout and confirms automatically via webhook), so this suite needs
-// RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET set in .dev.vars for the "Continue
-// to Payment" button to be enabled at all - there is no UPI fallback to
-// fall back to anymore.
+// Checkout no longer runs its own email-verification step - that changed
+// 2026-10-02 (see DECISIONS.md). Checkout's "Verify Email" step turned out
+// to just be the sign-in OTP under a different URL, so it's gone: a
+// shopper now has to already be signed in (mint-session here, the real
+// navbar OTP flow for a human) before checkout/page.tsx will even render
+// the form, and the email field is then a read-only display of the
+// session's own address. Direct UPI (QR code + deep link, paid straight
+// to the store's own VPA, no payment gateway) is the only payment method
+// - it needs STICKHIVE_UPI_ID set in .dev.vars, but unlike Razorpay there's
+// no enablement flag gating the "Continue to Payment" button itself.
 
 async function signIn(page: Page, email: string) {
   const response = await page.request.post("/api/dev/mint-session", {
@@ -114,7 +112,7 @@ test.describe("Signed-in cart/checkout", () => {
     await expect(page.getByTestId("checkout-form")).toHaveCount(0);
   });
 
-  test("a signed-in shopper can place an order that goes straight to the Razorpay payment portal", async ({ page }) => {
+  test("a signed-in shopper can place an order that goes straight to the UPI payment screen", async ({ page }) => {
     await signIn(page, `e2e-checkout-${test.info().workerIndex}-${Date.now()}@example.com`);
 
     await page.goto("/shop");
@@ -147,10 +145,10 @@ test.describe("Signed-in cart/checkout", () => {
     await form.getByLabel(/city/i).fill("New Delhi");
     await form.getByLabel(/state/i).selectOption("Delhi");
 
-    // UPI is gone - Razorpay is the only (and un-chosen, since there's
-    // nothing left to choose) payment method shown.
-    await expect(page.getByRole("button", { name: /upi/i })).toHaveCount(0);
-    await expect(page.getByText(/cards, upi apps & more \(razorpay\)/i)).toBeVisible();
+    // Direct UPI is the only (and un-chosen, since there's nothing left to
+    // choose) payment method shown - no Razorpay card option anymore.
+    await expect(page.getByText(/^UPI$/)).toBeVisible();
+    await expect(page.getByText(/cards, upi apps & more \(razorpay\)/i)).toHaveCount(0);
 
     const orderResponsePromise = page.waitForResponse(
       (response) => response.url().includes("/api/orders") && response.request().method() === "POST",
@@ -164,19 +162,35 @@ test.describe("Signed-in cart/checkout", () => {
     // rejection - e.g. a regression in the D1 product-validation path
     // checkout was rewired to, see DECISIONS.md's 2026-09-21 entry - fail
     // the test loudly instead of the UI silently stalling.
-    expect(orderResponse.status(), `order creation failed: ${await orderResponse.text().catch(() => "")}`).toBe(201);
-    const orderBody = (await orderResponse.json().catch(() => null)) as { order?: { paymentMethod?: string } } | null;
-    expect(orderBody?.order?.paymentMethod).toBe("razorpay");
+    //
+    // Status only, not the response body: checkout/page.tsx's own
+    // window.location.href navigation (a pre-existing, deliberately-
+    // untouched issue - see BACKLOG.md) fires the instant its own fetch
+    // resolves, and wins the race against Playwright's CDP body-fetch
+    // every time - confirmed directly with a standalone debug script that
+    // even reading the body as the very next statement after this still
+    // throws "Response body is not available for a response that was
+    // navigated away from." The order's real paymentMethod is verified
+    // below instead, from localStorage (written synchronously by
+    // handlePlaceOrder() before it navigates - see checkout/page.tsx) and
+    // from order-success's own rendered UI, both unaffected by the race.
+    expect(orderResponse.status()).toBe(201);
 
-    // Lands on order-success, which should go straight for the payment
-    // portal rather than sitting on a "click Pay Now" screen - it's not
-    // "confirmed" at this point, only "created" (see order-success/page.tsx's
-    // auto-launch effect and backend/orders/service.ts's awaiting_payment
-    // state). Completing the actual Razorpay payment needs a real Razorpay
-    // test-mode interaction, out of scope for this suite - this confirms
-    // the order exists and the payment step is what's shown next, not that
-    // the payment itself succeeds.
+    // Lands on order-success, which shows the UPI QR/deep-link payment
+    // screen immediately rather than an "order received" message - it's
+    // not "confirmed" at this point, only "created" (see
+    // backend/orders/service.ts's awaiting_payment state). The order is
+    // only confirmed once an admin verifies the payment, so this test
+    // just confirms the order exists and the payment screen is what's
+    // shown next, not that a real payment completes.
     await expect(page).toHaveURL(/\/order-success\?orderId=/, { timeout: 15000 });
+
+    const lastOrder = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("stickhive:last-order") ?? "null"),
+    );
+    expect(lastOrder?.paymentMethod).toBe("upi");
+
     await expect(page.getByText(/order id/i).first()).toBeVisible();
+    await expect(page.getByText(/pay .* via upi/i)).toBeVisible();
   });
 });
