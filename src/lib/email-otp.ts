@@ -41,8 +41,8 @@ export async function sendEmailOtp(
   });
 
   try {
-    await resend.emails.send({
-      from: "StickHive <onboarding@resend.dev>",
+        await resend.emails.send({
+      from: "StickHive <noreply@stickhive.app>",
       to: email,
       subject: "Your StickHive verification code",
       html: `
