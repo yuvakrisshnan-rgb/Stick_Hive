@@ -67,9 +67,9 @@
   // 2026-09-22 - scripts/check-required-config.mjs (run as the first step
   // of deploy.yml) fails the deploy if this is ever unset again.
   //
-  // AUTH_FROM_EMAIL is still intentionally absent - no verified sender
-  // domain exists yet, so OTP emails fall back to Resend's shared sandbox
-  // sender (onboarding@resend.dev) until it's set.
+  // AUTH_FROM_EMAIL is now set below - stickhive.app was verified with
+  // Resend on 2026-10-11, so sign-in OTP emails send from
+  // noreply@stickhive.app instead of falling back to the sandbox sender.
   //
   // PRODUCTS_SOURCE=d1: the remote products table (migrations/0006) has
   // been applied and seeded (194 rows, 107 active - see DEPLOY_CHECKLIST.md
@@ -86,6 +86,7 @@
     "STICKHIVE_ADMIN_EMAILS": "yuvakrisshnan@gmail.com",
     "STICKHIVE_UPI_ID": "yuvakrisshnan-1@oksbi",
     "STICKHIVE_UPI_NAME": "Stick Hive",
-    "PRODUCTS_SOURCE": "d1"
+    "PRODUCTS_SOURCE": "d1",
+    "AUTH_FROM_EMAIL": "Stick Hive <noreply@stickhive.app>"
   }
 }

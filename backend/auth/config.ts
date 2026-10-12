@@ -1,17 +1,92 @@
-export const AUTH_COOKIE_NAME = "stickhive_session";
-export const OTP_EXPIRY_MS = 5 * 60 * 1000;
-export const OTP_MAX_ATTEMPTS = 5;
-export const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
-export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
-
-export function requireResendApiKey(): string {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    throw new Error("RESEND_API_KEY is not configured.");
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stickhive",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "./worker/index.ts",
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "stickhive-db",
+      "database_id": "9fbfa6ce-b67c-4075-afb6-c251a99ac53a",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // r2_buckets restored 2026-09-21: R2 has been enabled on the account
+  // and the bucket created for real (`wrangler r2 bucket create
+  // stickhive-product-images`) - this binding was removed on an earlier
+  // deploy specifically because neither of those was true yet (`wrangler
+  // deploy` validates every binding against the real account, unlike
+  // local dev, which tolerates an as-yet-nonexistent bucket) and it was
+  // hard-failing every deploy with "R2 bucket ... not found [code:
+  // 10085]". Binding name (PRODUCT_IMAGES) matches what backend/storage/
+  // r2.ts's comment already documented, kept for continuity even though
+  // that module's own S3-compatible client isn't actually what uploaded
+  // the images - see scripts/upload-product-images-r2.mjs's header for
+  // why. Nothing in the live Worker reads env.PRODUCT_IMAGES yet either
+  // way; the public image URLs the products table stores point at the
+  // bucket's own pub-*.r2.dev domain, not through this binding.
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "stickhive-product-images"
+    }
+  ],
+  // D1 lives in APAC (Singapore). Investigation into a run of 502s found
+  // all of them landed on the Marseille (MRS) edge PoP specifically -
+  // the farthest point on the globe from APAC - while every successful
+  // request in the same window was served from SIN/BOM. Smart Placement
+  // measures real request latency and relocates execution near the
+  // backend it depends on (D1 here) when that's faster than running at
+  // whatever edge node the visitor happens to hit. This needs real
+  // traffic data over time to actually start relocating - it will not
+  // change behavior on the very next request after deploy.
+  "placement": {
+    "mode": "smart"
+  },
+  // Daily cleanup of expired otp_challenges/sessions rows (see
+  // backend/db/cleanup.ts and worker/index.ts's `scheduled` export).
+  // 03:00 UTC - low-traffic window, arbitrary otherwise; the job is
+  // idempotent and can safely run at any time.
+  "triggers": {
+    "crons": [
+      "0 3 * * *"
+    ]
+  },
+  // Non-sensitive config. AUTH_SECRET and RESEND_API_KEY are set via
+  // `wrangler secret put` instead (not committed to the repo).
+  //
+  // STICKHIVE_UPI_ID is the real merchant VPA UPI checkout pays into as of
+  // 2026-09-22 - scripts/check-required-config.mjs (run as the first step
+  // of deploy.yml) fails the deploy if this is ever unset again.
+  //
+  // AUTH_FROM_EMAIL is now set below - stickhive.app was verified with
+  // Resend on 2026-10-11, so sign-in OTP emails send from
+  // noreply@stickhive.app instead of falling back to the sandbox sender.
+  //
+  // PRODUCTS_SOURCE=d1: the remote products table (migrations/0006) has
+  // been applied and seeded (194 rows, 107 active - see DEPLOY_CHECKLIST.md
+  // and DECISIONS.md) as of 2026-09-21, so /shop, checkout, and the
+  // homepage (backend/products/catalog.ts) all read the real D1 catalogue
+  // in production instead of the static PRODUCTS array fallback. All 107
+  // active rows also have real image_url/thumbnail_url now (R2 enabled,
+  // bucket created, scripts/upload-product-images-r2.mjs run for real
+  // against --db-target remote as of 2026-09-21 - see DECISIONS.md) - no
+  // product falls back to its emoji placeholder for lack of a real image
+  // anymore, every active row has one.
+  "vars": {
+    "AUTH_DEBUG_OTP": "false",
+    "STICKHIVE_ADMIN_EMAILS": "yuvakrisshnan@gmail.com",
+    "STICKHIVE_UPI_ID": "yuvakrisshnan-1@oksbi",
+    "STICKHIVE_UPI_NAME": "Stick Hive",
+    "PRODUCTS_SOURCE": "d1",
+    "AUTH_FROM_EMAIL": "Stick Hive <noreply@stickhive.app>"
   }
-  return key;
-}
-
-export function authFromEmail(): string {
-  return process.env.RESEND_FROM_EMAIL || process.env.AUTH_FROM_EMAIL || "Stick Hive <onboarding@resend.dev>";
 }
