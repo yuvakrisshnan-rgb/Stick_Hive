@@ -19,6 +19,8 @@ import "@fontsource/jetbrains-mono/700.css";
 
 import "./globals.css"
 
+import { Toaster } from "sonner"
+
 import {
   ShopProvider,
 } from "@/components/shop/store-provider"
@@ -165,6 +167,28 @@ export default function RootLayout({
           <AuthDialogHost />
 
         </AuthProvider>
+
+
+        {/* ================================================================
+            TOASTS — sign-in / sign-out confirmations, and any future
+            app-wide notifications. Sits outside every provider so it
+            keeps rendering regardless of auth/shop state.
+        ================================================================= */}
+
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            style: {
+              background: "#fff8ed",
+              border: "1px solid rgba(0,0,0,0.1)",
+              borderRadius: "9999px",
+              padding: "12px 20px",
+              fontWeight: 700,
+              fontSize: "14px",
+              color: "#111",
+            },
+          }}
+        />
 
       </body>
 

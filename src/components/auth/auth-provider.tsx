@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { toast } from "sonner";
 
 export type AuthUser = {
   id: string;
@@ -135,6 +136,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Refresh once after login so admin-only navigation metadata is loaded
           // from the server without exposing the admin allowlist to the client.
           await refresh();
+          toast.success("Welcome back! 🐝", {
+            description: result.user.email,
+          });
           return { success: true };
         }
 
@@ -149,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
     },
-    [],
+    [refresh],
   );
 
   const logout = useCallback(async () => {
@@ -158,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         credentials: "include",
       });
+      toast.success("Signed out");
     } finally {
       setUser(null);
     }
