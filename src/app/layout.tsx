@@ -172,20 +172,19 @@ export default function RootLayout({
         {/* ================================================================
             TOASTS — sign-in / sign-out confirmations, and any future
             app-wide notifications. Sits outside every provider so it
-            keeps rendering regardless of auth/shop state.
+            keeps rendering regardless of auth/shop state. Styling lives
+            in globals.css (.stickhive-toast) since toast content is now
+            custom JSX (toast.custom in auth-provider.tsx), not sonner's
+            built-in toastOptions.style.
         ================================================================= */}
 
         <Toaster
           position="top-center"
+          gap={10}
           toastOptions={{
-            style: {
-              background: "#fff8ed",
-              border: "1px solid rgba(0,0,0,0.1)",
-              borderRadius: "9999px",
-              padding: "12px 20px",
-              fontWeight: 700,
-              fontSize: "14px",
-              color: "#111",
+            unstyled: true,
+            classNames: {
+              toast: "stickhive-toast",
             },
           }}
         />

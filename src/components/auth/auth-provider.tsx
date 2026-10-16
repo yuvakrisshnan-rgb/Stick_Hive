@@ -71,6 +71,26 @@ async function parseResponse(response: Response) {
   };
 }
 
+function AuthToast({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="stickhive-toast">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-hive-yellow text-base">
+        🐝
+      </div>
+      <div>
+        <p>{title}</p>
+        <p data-description>{description}</p>
+      </div>
+    </div>
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,9 +156,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Refresh once after login so admin-only navigation metadata is loaded
           // from the server without exposing the admin allowlist to the client.
           await refresh();
-          toast.success("Welcome back! 🐝", {
-            description: result.user.email,
-          });
+          toast.custom(
+            () => (
+              <AuthToast title="Welcome back!" description={result.user!.email} />
+            ),
+            { duration: 3500 },
+          );
           return { success: true };
         }
 
@@ -162,7 +185,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         credentials: "include",
       });
-      toast.success("Signed out");
+      toast.custom(
+        () => <AuthToast title="Signed out" description="See you soon!" />,
+        { duration: 3000 },
+      );
     } finally {
       setUser(null);
     }
